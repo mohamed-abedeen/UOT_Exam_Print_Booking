@@ -804,6 +804,27 @@ type EndMaintenanceResult =                                          // input { 
 // updateMachine, archiveMachine, unarchiveMachine: { ok: true } gains moved and flagged (unarchive: both empty)
 ```
 
+Saturday requests (§1.8, §3.4). Quantities are impressions. No scheduling lock: an approval only adds room.
+
+```ts
+interface CreateSaturdayRequestInput { date: string; expectedQuantity: number; reason: string }   // college only
+// date: a Saturday after today, not a holiday, and Saturday not in working_weekdays; else 'validation'
+type CreateSaturdayRequestResult =
+  | { ok: true; request: { id: number } }
+  | { ok: false; error: 'validation' | 'duplicate' };   // duplicate = a pending or approved request for that date
+type DecideSaturdayRequestInput =
+  | { requestId: number; decision: 'approve'; approvedQuantity: number; note?: string }   // blank note = none
+  | { requestId: number; decision: 'reject'; note?: string };
+type DecideSaturdayRequestResult =
+  | { ok: true; request: { id: number; status: 'approved' | 'rejected' } }
+  | { ok: false; error: 'validation' | 'not_found' | 'refused' };   // refused = already decided, or the date has passed
+// listSaturdayRequests({ collegeId?, status? }): college = own rows (collegeId refused), admin = all; newest date
+// first, no paging; each row: college name, date, expected and approved quantity, reason, status, note, decider's
+// name, decided_at, usedImpressions (approved rows only, else null)
+// notification data: saturday_requested { date, collegeName, expectedQuantity };
+// saturday_decided { date, status, approvedQuantity, note }; both set saturday_request_id
+```
+
 ## 5. Settings keys
 
 Rows of `settings`; `value` is JSON. Seeded with the defaults.
@@ -915,3 +936,6 @@ All approved by the owner on 2026-11-25 (1–16 before the Opus 5.5 review, 17�
 22. A refused `moveBooking` target answers `slot_taken` with the rule that failed (`MoveRefusal`, §4). (Owner, 2026-11-25, step 2.4.)
 23. A stop without `startsAt` starts now; a planned stop starts in the future; stop times are free instants, not the 10-minute grid. (Owner, 2026-11-25, step 2.4.)
 24. `startMaintenance`, `archiveMachine` and `updateMachine` return the bookings they moved and flagged; `listMaintenance` returns every row, newest first, optionally for one machine. (Owner, 2026-11-25, step 2.4.)
+25. A Saturday request is for a Saturday after today that is not a holiday and not already a working weekday. One open request per college and date; after a rejection a new one may be sent. (Owner, 2026-11-25, step 2.6.)
+26. A request is decided once, while pending and its date is today or later; the approved quantity may differ from the expected one; the note is optional. An approval is never withdrawn or revoked. (Owner, 2026-11-25, step 2.6.)
+27. `createSaturdayRequest` answers `duplicate` for a second open request; `listSaturdayRequests` returns newest date first, with `collegeId` and `status` filters for the admin. (Owner, 2026-11-25, step 2.6.)
