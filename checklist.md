@@ -60,6 +60,7 @@ Login → admin adds a machine → college books → operator sees the queue.
 - [ ] **1.7 Operator screen: day queue** — Sonnet 5.5
   Requires: 1.4.
   Today's bookings by time and machine, read-only.
+  Note 2026-11-25 (Sonnet 5.5): built, not ticked (review is in 1.8). Owner choices: today only (no date picker); one list by start time with the machine as a column; every status except `cancelled`. Code: `getDayQueue(date)` in `lib/actions/bookings.ts` (operator + admin), `lib/bookings/queue.ts`, `app/(operator)/operator/page.tsx`. Tests: `tests/queue.test.ts` (6). Not checked in the browser as a signed-in operator (the seed password was not readable by the agent). Arabic labels for service types are mine (`quality` → «جودة»); the phone is not shown (2.2).
 - [ ] **1.8 Review of phase 1** — Fable 5.2
   Requires: 1.1–1.7.
   Review 1.1 and 1.5–1.7. Done when: the full slice works in the browser for the three roles.
