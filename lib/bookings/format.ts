@@ -1,4 +1,4 @@
-// Arabic labels and display formatting for the college screens. Pure (no database, no `server-only`): the
+// Arabic labels and display formatting for the booking screens (college and operator): one wording everywhere. Pure (no database, no `server-only`): the
 // booking form (a client component) and the list page both use it. Times use the fixed +02:00 offset of
 // lib/scheduling/time.ts, never Intl, so the server and the browser print the same text.
 import { minutesOfDay, TZ_OFFSET_MINUTES, weekdayOf } from "@/lib/scheduling/time";

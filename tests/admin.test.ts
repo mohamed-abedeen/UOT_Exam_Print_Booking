@@ -1,7 +1,7 @@
 // Step 1.5 — machine and college actions behind the admin screens.
 // Calls the real server actions against the test database; only cookies / headers / redirect are faked
 // (tests/setup.ts). Skipped when DATABASE_URL is not set.
-import { count, eq } from "drizzle-orm";
+import { count, eq, sql } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 import { getDb } from "@/db";
 import { auditLog, colleges, machines, sessions, users } from "@/db/schema";
@@ -11,6 +11,7 @@ import { createUser, setUserActive } from "@/lib/actions/users";
 import { AuthError, SESSION_COOKIE } from "@/lib/auth/guard";
 import { hashPassword } from "@/lib/auth/password";
 import { createSession } from "@/lib/auth/session";
+import { takeSchedulingLock } from "@/lib/scheduling/load";
 import { eligibleMachines } from "@/lib/scheduling/schedule";
 import type { JobSpec, ScheduleContext } from "@/lib/scheduling/types";
 import { browser } from "./helpers/fake-request";
@@ -213,6 +214,36 @@ describe.skipIf(!process.env.DATABASE_URL)("step 1.5: admin machines and college
       expect(await auditRows("machine.unarchive")).toHaveLength(1);
       expect(await archiveMachine({ machineId: 9999 })).toEqual({ ok: false, error: "not_found" });
       expect(await archiveMachine({ machineId: "1" })).toEqual({ ok: false, error: "validation" });
+    });
+
+    it("every machine write waits for the scheduling lock (contracts §3.9)", async () => {
+      actAs("admin");
+      const created = await createMachine(NEW_MACHINE);
+      if (!created.ok) throw new Error("setup");
+      const machineId = created.machine.id;
+      const waiting = async () => {
+        const rows = await getDb().execute(sql`SELECT count(*)::int AS n FROM pg_locks WHERE locktype = 'advisory' AND NOT granted`);
+        return Number((rows[0] as { n: number }).n);
+      };
+      const writes = [
+        () => createMachine({ ...NEW_MACHINE, name: "آلة ثانية" }),
+        () => updateMachine({ machineId, fields: { ...NEW_MACHINE, priority: 5 } }),
+        () => archiveMachine({ machineId }),
+        () => unarchiveMachine({ machineId }),
+      ];
+
+      for (const write of writes) {
+        let result: ReturnType<typeof write> | undefined;
+        // Another transaction (a booking being placed) holds the lock while the write is sent.
+        await getDb().transaction(async (tx) => {
+          await takeSchedulingLock(tx);
+          result = write();
+          for (let i = 0; i < 200 && (await waiting()) === 0; i++) await new Promise((r) => setTimeout(r, 10));
+          expect(await waiting()).toBe(1);
+        });
+        expect(await result).toMatchObject({ ok: true });
+      }
+      expect(await machineRow(machineId)).toMatchObject({ priority: 5, archivedAt: null });
     });
   });
 

@@ -1,30 +1,22 @@
 // Step 1.7 — the operator's day queue: today's bookings by start time, one list with the machine as a column.
 // Read-only; the buttons (confirm identity, ready, ...) come with step 2.2.
 import { connection } from "next/server";
+import { Suspense } from "react";
 import { getDayQueue } from "@/lib/actions/bookings";
-import type { DayQueueRow } from "@/lib/bookings/queue";
+import { SERVICE_LABEL, SIDES_LABEL, STATUS_LABEL, timeOf } from "@/lib/bookings/format";
 import { localDate } from "@/lib/scheduling/time";
 
-const STATUS_LABEL: Record<DayQueueRow["status"], string> = {
-  booked: "محجوز",
-  in_progress: "قيد التنفيذ",
-  ready: "جاهز للاستلام",
-  delivered: "تم التسليم",
-  cancelled: "ملغى",
-  no_show: "لم يحضر",
-};
-const SERVICE_LABEL: Record<DayQueueRow["serviceType"], string> = {
-  exam_questions: "أسئلة امتحان",
-  results: "نتائج",
-  quality: "جودة",
-  answer_sheets: "أوراق إجابة",
-};
-const SIDES_LABEL: Record<DayQueueRow["sides"], string> = { single: "وجه واحد", duplex: "وجهان" };
+// The queue reads the session, the clock and the database, so it streams in behind its own <Suspense>
+// (same as the college and admin pages; Next 16 instant-navigation check).
+export default function OperatorPage() {
+  return (
+    <Suspense fallback={<p className="text-zinc-600 dark:text-zinc-400">جارٍ التحميل…</p>}>
+      <DayQueue />
+    </Suspense>
+  );
+}
 
-const clock = new Intl.DateTimeFormat("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "Africa/Tripoli" });
-const timeOf = (at: Date) => clock.format(at);
-
-export default async function OperatorPage() {
+async function DayQueue() {
   await connection(); // "today" is read per request, never at build time
   const today = localDate(new Date());
   const result = await getDayQueue(today); // the action's first line is the role guard
