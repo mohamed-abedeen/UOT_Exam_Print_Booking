@@ -1,21 +1,21 @@
-// Changes that keep the status (contracts §3.7): editBooking and sendDelayNotice. Both may change a placement, so
-// each try takes the scheduling lock, loads `ctx` without the booking itself (`ignoreBookingId`), decides and
+// Changes that keep the status (contracts §3.7): editBooking, sendDelayNotice and moveBooking. Each may change a
+// placement, so each try takes the scheduling lock, loads `ctx` without the booking itself (`ignoreBookingId`), decides and
 // writes; a placement conflict rolls the try back and it starts again (§3.9). The UPDATE repeats every guard,
 // because a state transition (no lock) may move the booking meanwhile. The server actions in
 // lib/actions/bookings.ts run the role guard and call these. Not a "use server" file.
 import "server-only";
-import { and, eq, gte, isNull, type SQL } from "drizzle-orm";
+import { and, eq, gte, inArray, isNull, type SQL } from "drizzle-orm";
 import { z } from "zod";
 import { getDb, type Tx } from "@/db";
 import { bookings } from "@/db/schema";
 import { audit } from "@/lib/auth/audit";
 import { AuthError, ownRows, type Actor } from "@/lib/auth/guard";
 import { bookingData, notifyAdmins, notifyCollege } from "@/lib/notifications";
-import { availabilityFor, checkAccepted, type Availability } from "@/lib/scheduling/availability";
+import { availabilityFor, checkAccepted, checkMove, type Availability, type MoveRefusal } from "@/lib/scheduling/availability";
 import { examDateWarning, normalizePhone } from "@/lib/scheduling/helpers";
 import { loadContext, loadSettings, takeSchedulingLock } from "@/lib/scheduling/load";
 import { latestFreeStart } from "@/lib/scheduling/schedule";
-import { addMinutes, atMinutes, localDate } from "@/lib/scheduling/time";
+import { addMinutes, atMinutes, localDate, SLOT_MINUTES } from "@/lib/scheduling/time";
 import type { BookingStatus, Placement, Sides } from "@/lib/scheduling/types";
 import {
   acceptInput,
@@ -42,6 +42,11 @@ export type SendDelayNoticeResult =
   | { ok: true; booking: { id: number; reference: string; startsAt: Date; endsAt: Date }; moved: boolean }
   | { ok: false; error: "validation" | "not_found" | "refused" | "slot_taken" };
 
+export type MoveBookingResult =
+  | { ok: true; booking: { id: number; reference: string; machineId: number; startsAt: Date; endsAt: Date } }
+  | { ok: false; error: "validation" | "not_found" | "refused" } // 'refused' = not booked / in_progress
+  | { ok: false; error: "slot_taken"; reason: MoveRefusal }; // the target fails a rule (owner, 2026-11-25, step 2.4)
+
 /** For tests only: runs under the lock, right before the UPDATE that writes a new placement, on try `attempt`. */
 export interface ChangeHooks {
   beforePlacementUpdate?(placement: Placement, attempt: number): Promise<void>;
@@ -57,6 +62,16 @@ const editBookingInput = z.strictObject({
   accept: acceptInput.optional(),
 });
 const delayInput = z.strictObject({ bookingId: id });
+const moveInput = z.strictObject({
+  bookingId: id,
+  machineId: id,
+  // On the 10-minute grid; the bounds keep date arithmetic inside the range of Date.
+  startsAt: z
+    .date()
+    .min(new Date(0))
+    .max(new Date("9999-12-31T00:00:00Z"))
+    .refine((d) => d.getTime() % (SLOT_MINUTES * 60_000) === 0),
+});
 
 const NOT_FOUND = { ok: false, error: "not_found" } as const;
 const NOT_EDITABLE = { ok: false, error: "not_editable" } as const;
@@ -337,4 +352,75 @@ export async function sendDelayNoticeFor(
     }
   }
   return { ok: false, error: "slot_taken" };
+}
+
+// ---- moveBooking
+
+type MoveInput = z.infer<typeof moveInput>;
+
+function tryMove(actor: Actor, v: MoveInput, attempt: number, hooks: ChangeHooks): Promise<MoveBookingResult> {
+  return getDb().transaction(async (tx): Promise<MoveBookingResult> => {
+    await takeSchedulingLock(tx);
+    const now = new Date();
+    const b = await currentBooking(tx, actor, v.bookingId);
+    if (!b) return NOT_FOUND;
+    if (b.status !== "booked" && b.status !== "in_progress") return REFUSED;
+
+    const ctx = await loadContext(tx, { now, collegeId: b.collegeId, ignoreBookingId: b.id });
+    const target = checkMove(jobOf(b), { status: b.status, startsAt: b.startsAt }, v, ctx);
+    if (typeof target === "string") return { ok: false, error: "slot_taken", reason: target };
+    await hooks.beforePlacementUpdate?.(target, attempt);
+
+    const [row] = await tx
+      .update(bookings)
+      .set({ ...target, ...FLAG_CLEARED, updatedAt: now })
+      .where(and(eq(bookings.id, b.id), inArray(bookings.status, ["booked", "in_progress"])))
+      .returning({
+        id: bookings.id,
+        reference: bookings.reference,
+        collegeId: bookings.collegeId,
+        machineId: bookings.machineId,
+        startsAt: bookings.startsAt,
+        endsAt: bookings.endsAt,
+      });
+    if (!row) return REFUSED; // left a holding state meanwhile (a transition takes no lock)
+
+    await audit(tx, actor, {
+      action: "booking.move",
+      entity: "bookings",
+      entityId: row.id,
+      collegeId: row.collegeId,
+      details: {
+        reference: row.reference,
+        from: { machineId: b.machineId, startsAt: b.startsAt, endsAt: b.endsAt },
+        to: target,
+        flagCleared: b.needsReschedule,
+      },
+    });
+    await notifyCollege(tx, row.collegeId, "booking_rescheduled", row.id, bookingData(row));
+
+    return {
+      ok: true,
+      booking: { id: row.id, reference: row.reference, machineId: row.machineId, startsAt: row.startsAt, endsAt: row.endsAt },
+    };
+  });
+}
+
+/**
+ * The admin places a `booked` or `in_progress` booking on `{ machineId, startsAt }` (contracts §3.7): any booking,
+ * flagged or not. The end comes from that machine's duration. Clears the flag; audited; `booking_rescheduled` to
+ * the college. A target that fails a rule → `slot_taken` with the reason; nothing changes.
+ */
+export async function moveBookingFor(actor: Actor, input: unknown, hooks: ChangeHooks = {}): Promise<MoveBookingResult> {
+  if (actor.role !== "admin") throw new AuthError();
+  const parsed = moveInput.safeParse(input);
+  if (!parsed.success) return VALIDATION;
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      return await tryMove(actor, parsed.data, attempt, hooks);
+    } catch (error) {
+      if (!isPlacementConflict(error)) throw error;
+    }
+  }
+  return { ok: false, error: "slot_taken", reason: "busy" };
 }
