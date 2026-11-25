@@ -35,10 +35,11 @@ Login → admin adds a machine → college books → operator sees the queue.
   Migrations for `colleges`, `users`, `sessions`, `machines`, `bookings` (exclusion constraint on machine + interval), `settings`, `holidays`, `audit_log`. Seed: the 7 machines, one admin, two test colleges, one operator.
   Done when: migrations apply on an empty DB and the seed loads.
   Note 2026-11-25 (Opus 5.5): built; ticked by the owner before review, which is in 1.8. Owner choices: `machine_maintenance` added now (its exclusion constraint is tested here); seeded accounts use `SEED_PASSWORD` from `.env`; hashing with `@node-rs/argon2` (1.2 reuses it); 650i seeded as 401–800. Schema checked against the contract SQL: only diffs are `created_at` columns and `ON DELETE RESTRICT` (both from §0). Speeds and setup times are placeholders; all priorities 100.
-- [ ] **1.2 Login and permissions** — Fable 5.2 (high) · review: Opus 5.5
+- [x] **1.2 Login and permissions** — Fable 5.2 (high) · review: Opus 5.5
   Requires: 1.1.
   Password hashing, DB sessions, role guard used by every server action, login rate limit, admin creates accounts and resets passwords, `audit()` helper.
   Done when: tests prove each role is refused the other roles' actions and a college cannot read another college's rows.
+  Note 2026-11-25 (Fable 5.2): built; values fixed here are in contracts §1.3. Owner choices: 8 h idle / 7 d max; 5 wrong → 15 min lock; server-made temporary password, min 10; minimal login and change-password screens included. Code: `lib/auth/*`, `lib/actions/session.ts`, `lib/actions/users.ts`, `components/auth/role-shell.tsx`, `app/login`, `app/change-password`. Tests: `tests/auth.test.ts` (48 tests) on a separate `<db>_test` database made by `tests/global-setup.ts`. Opus 5.5 review "pass after fixes" (1 should-fix: `changeOwnPassword` guesses now count toward the lock; 3 nits fixed), re-check "pass". Left as is: no per-IP limit; login timing differs by a few DB round trips for known usernames; the "own rows" proof uses `ownRows()` on `bookings` directly — every later college-facing action needs its own other-college test; a dev-only "could not validate instant" notice when the layout gate redirects.
 - [ ] **1.3 Scheduling core** — Fable 5.2 (high) · review: Opus 5.5
   Requires: 0.1, 0.2.
   Pure functions with unit tests: quantities, duration, eligible machines with the "larger takes smaller" order, free-interval search, working calendar, large-job rule.
