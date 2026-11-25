@@ -8,8 +8,10 @@ import {
   type CreateBookingResult,
   type GetAvailabilityResult,
 } from "@/lib/bookings/create";
+import { getDayQueueFor, type GetDayQueueResult } from "@/lib/bookings/queue";
 
 const BOOKERS = ["college", "admin"] as const;
+const QUEUE_READERS = ["operator", "admin"] as const;
 
 /** An exact placement, a suggestion or a refusal for (job, date, hour). Writes nothing. */
 export async function getAvailability(input: unknown): Promise<GetAvailabilityResult> {
@@ -21,4 +23,10 @@ export async function getAvailability(input: unknown): Promise<GetAvailabilityRe
 export async function createBooking(input: unknown): Promise<CreateBookingResult> {
   const actor = await requireRole(BOOKERS);
   return createBookingFor(actor, input);
+}
+
+/** The operator's day queue: bookings of one business date by start time and machine; read-only. */
+export async function getDayQueue(date: unknown): Promise<GetDayQueueResult> {
+  await requireRole(QUEUE_READERS);
+  return getDayQueueFor(date);
 }
