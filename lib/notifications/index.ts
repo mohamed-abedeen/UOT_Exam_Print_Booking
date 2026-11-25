@@ -27,13 +27,14 @@ export async function notifyCollege(
   type: NotificationType,
   bookingId: number | null,
   data: object,
+  saturdayRequestId: number | null = null,
 ): Promise<void> {
   const recipients = await tx
     .select({ id: users.id })
     .from(users)
     .where(and(eq(users.collegeId, collegeId), eq(users.role, "college"), eq(users.isActive, true)));
   if (recipients.length === 0) return;
-  await tx.insert(notifications).values(recipients.map((u) => ({ userId: u.id, type, bookingId, data })));
+  await tx.insert(notifications).values(recipients.map((u) => ({ userId: u.id, type, bookingId, saturdayRequestId, data })));
 }
 
 /** "The admins are notified" = one row for each active admin. */
@@ -42,13 +43,14 @@ export async function notifyAdmins(
   type: NotificationType,
   bookingId: number | null,
   data: object,
+  saturdayRequestId: number | null = null,
 ): Promise<void> {
   const recipients = await tx
     .select({ id: users.id })
     .from(users)
     .where(and(eq(users.role, "admin"), eq(users.isActive, true)));
   if (recipients.length === 0) return;
-  await tx.insert(notifications).values(recipients.map((u) => ({ userId: u.id, type, bookingId, data })));
+  await tx.insert(notifications).values(recipients.map((u) => ({ userId: u.id, type, bookingId, saturdayRequestId, data })));
 }
 
 // ---- reads (own rows only)
@@ -60,6 +62,7 @@ export interface NotificationItem {
   id: number;
   type: NotificationType;
   bookingId: number | null;
+  saturdayRequestId: number | null;
   data: unknown;
   readAt: Date | null;
   createdAt: Date;
@@ -74,6 +77,7 @@ export async function listMyNotificationsFor(actor: Actor): Promise<ListMyNotifi
       id: notifications.id,
       type: notifications.type,
       bookingId: notifications.bookingId,
+      saturdayRequestId: notifications.saturdayRequestId,
       data: notifications.data,
       readAt: notifications.readAt,
       createdAt: notifications.createdAt,
