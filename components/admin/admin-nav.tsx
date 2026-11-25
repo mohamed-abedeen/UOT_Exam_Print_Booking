@@ -1,0 +1,19 @@
+import Link from "next/link";
+
+const links = [
+  { href: "/admin/machines", label: "الآلات" },
+  { href: "/admin/colleges", label: "الكليات" },
+  { href: "/admin/accounts", label: "الحسابات" },
+];
+
+export function AdminNav() {
+  return (
+    <nav className="mb-4 flex gap-4 border-b border-zinc-300 pb-3 dark:border-zinc-700">
+      {links.map((l) => (
+        <Link key={l.href} href={l.href} className="underline-offset-4 hover:underline">
+          {l.label}
+        </Link>
+      ))}
+    </nav>
+  );
+}
