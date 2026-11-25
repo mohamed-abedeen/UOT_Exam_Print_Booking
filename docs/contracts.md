@@ -1,7 +1,7 @@
 # UOT Exam Print Booking — contracts
 
-Step 0.1 of [checklist.md](../checklist.md). Rules come from [plan.md](../plan.md); where a rule is silent, the choice made here is listed in §8 so the owner or the reviewer can overturn it.
-Status: written by Fable 5.2 on 2026-11-25, **Opus 5.5 review owed**.
+Step 0.1 of [checklist.md](../checklist.md). Rules come from [plan.md](../plan.md); where a rule is silent, the choice made here is listed in §8 (all approved by the owner, 2026-11-25).
+Status: written by Fable 5.2 on 2026-11-25; Opus 5.5 review "pass after fixes", fixes applied, re-check "pass" (2026-11-25). Step 0.1 done.
 
 Contents: 0 conventions · 1 tables · 2 booking states · 3 scheduling · 4 actions and permissions · 5 settings · 6 notifications and audit · 7 rule map · 8 choices made here.
 
@@ -14,7 +14,9 @@ Contents: 0 conventions · 1 tables · 2 booking states · 3 scheduling · 4 act
 - Time grid: `SLOT_MINUTES = 10` (a constant, not a setting). Every booking start and every duration is a multiple of 10 minutes.
 - "Holding" statuses are every status except `cancelled` and `no_show`: these rows occupy their interval.
 - The SQL below is the contract. The Drizzle schema of step 1.1 must produce an equivalent database (same names, types, checks, indexes).
-- Extension: `CREATE EXTENSION IF NOT EXISTS btree_gist;` (needed by the exclusion constraints).
+- Table order in this file is for reading; the migration creates tables in dependency order (for example `inventory_items` before `machine_parts`, `machine_parts` before `inventory_movements`).
+- Drizzle cannot express three things; they live in one hand-written SQL migration that runs right after the generated one that creates the tables (`drizzle/0001_exclusion_constraints.sql`): `CREATE EXTENSION IF NOT EXISTS btree_gist;`, constraint `bookings_no_overlap`, constraint `maintenance_no_overlap`. `drizzle-kit` does not know about them. A test in step 1.1 asserts both constraints exist (`SELECT conname FROM pg_constraint WHERE contype = 'x'`).
+- Scheduling transactions run at READ COMMITTED (§3.9).
 
 ## 1. Tables
 
@@ -26,7 +28,7 @@ CREATE TYPE machine_type      AS ENUM ('laser', 'duplicator');
 CREATE TYPE service_type      AS ENUM ('exam_questions', 'results', 'quality', 'answer_sheets');
 CREATE TYPE sides             AS ENUM ('single', 'duplex');
 CREATE TYPE booking_status    AS ENUM ('booked', 'in_progress', 'ready', 'delivered', 'cancelled', 'no_show');
-CREATE TYPE reschedule_reason AS ENUM ('maintenance', 'delay_no_slot');
+CREATE TYPE reschedule_reason AS ENUM ('maintenance', 'delay_no_slot', 'machine_change');
 CREATE TYPE saturday_status   AS ENUM ('pending', 'approved', 'rejected');
 CREATE TYPE item_kind         AS ENUM ('paper', 'toner', 'master_roll', 'part');
 CREATE TYPE movement_type     AS ENUM ('receive', 'consume', 'waste', 'adjust');
@@ -171,9 +173,9 @@ CREATE TABLE bookings (
   recipient_name   text NOT NULL,                     -- four-part name, validated by isFourPartName()
   subject          text NOT NULL,
   service_type     service_type NOT NULL,
-  copies           integer NOT NULL CHECK (copies > 0),
-  models           integer NOT NULL CHECK (models > 0),
-  pages_per_model  integer NOT NULL CHECK (pages_per_model > 0),
+  copies           integer NOT NULL CHECK (copies BETWEEN 1 AND 20000),
+  models           integer NOT NULL CHECK (models BETWEEN 1 AND 50),
+  pages_per_model  integer NOT NULL CHECK (pages_per_model BETWEEN 1 AND 500),   -- max impressions 5 × 10⁸, inside integer
   sides            sides   NOT NULL,
   exam_date        date,
   impressions      integer GENERATED ALWAYS AS (models * pages_per_model * copies) STORED,
@@ -184,8 +186,8 @@ CREATE TABLE bookings (
 
   -- schedule
   machine_id       bigint NOT NULL REFERENCES machines(id),
-  starts_at        timestamptz NOT NULL CHECK (extract(epoch FROM starts_at)::bigint % 600 = 0),
-  ends_at          timestamptz NOT NULL CHECK (extract(epoch FROM ends_at)::bigint % 600 = 0),
+  starts_at        timestamptz NOT NULL CHECK (extract(epoch FROM starts_at) % 600 = 0),
+  ends_at          timestamptz NOT NULL CHECK (extract(epoch FROM ends_at) % 600 = 0),
   work_date        date GENERATED ALWAYS AS ((starts_at AT TIME ZONE 'Africa/Tripoli')::date) STORED,
 
   -- state
@@ -364,8 +366,8 @@ Append-only; no `created_at` (it is `at`).
 | # | From → to | Action | Who | Guards | Writes |
 |---|---|---|---|---|---|
 | T1 | (none) → `booked` | `createBooking` | college (own), admin (on behalf) | form valid; placement found (§3) | booking row, reference; admin: `on_behalf = true`, audit, `booking_on_behalf` to the college |
-| T2 | `booked` → `in_progress` | `confirmIdentity` | operator, admin | `work_date` = today; `needs_reschedule = false` | `identity_confirmed_by`, `identity_confirmed_at`; audit |
-| T3 | `in_progress` → `ready` | `markReady` | operator, admin | `wasted_sheets ≥ 0` given; `waste_destroyed = true`; `needs_reschedule = false` | `wasted_sheets`, `waste_destroyed`, `ready_by`, `ready_at`; paper movement `consume −sheets`; if wasted > 0, paper movement `waste −wasted_sheets`; `impressions_used += impressions` on every installed part of the machine; `booking_ready` to the college |
+| T2 | `booked` → `in_progress` | `confirmIdentity` | operator, admin | `work_date` = today; `needs_reschedule = false` (a flagged job that has not started is moved by the admin first) | `identity_confirmed_by`, `identity_confirmed_at`; audit |
+| T3 | `in_progress` → `ready` | `markReady` | operator, admin | `wasted_sheets ≥ 0` given; `waste_destroyed = true`; a flag does not block it | `wasted_sheets`, `waste_destroyed`, `ready_by`, `ready_at`, flag cleared; paper movement `consume −sheets`; if wasted > 0, paper movement `waste −wasted_sheets`; `impressions_used += impressions` on every installed part of the machine; `booking_ready` to the college |
 | T4 | `ready` → `delivered` | `markDelivered` | operator, admin | — | `delivered_by`, `delivered_at` |
 | T5 | `booked` → `cancelled` | `cancelBooking` | college (own), admin | college: `now ≤ starts_at − edit_deadline_minutes`; admin: none | `cancelled_by`, `cancelled_at`, `cancel_reason`, flag cleared; admin: audit, `booking_cancelled` to the college |
 | T6 | `in_progress` → `cancelled` | `cancelBooking` | admin only | `cancel_reason` required | as T5; no stock movement |
@@ -373,7 +375,8 @@ Append-only; no `created_at` (it is `at`).
 
 Rules for all transitions:
 
-- Each one is a single `UPDATE … WHERE id = $1 AND status = $from`; zero rows updated = refused (someone else moved it first). Stock and notification rows are written in the same transaction.
+- Each one is a single `UPDATE … WHERE id = $1 AND status = $from AND <every guard of the row>` (e.g. T2: `AND needs_reschedule = false AND work_date = $today`; T5 by a college: `AND starts_at >= $now + edit_deadline`); zero rows updated = refused (someone else moved it first). Stock and notification rows are written in the same transaction.
+- "Flag cleared" = `needs_reschedule = false, reschedule_reason = NULL`, both in the same UPDATE.
 - `delivered`, `cancelled` and `no_show` are final.
 - `confirmIdentity` is the step that starts the job: nothing can become `ready` without `identity_confirmed_at`.
 - WhatsApp buttons write nothing: "started" is shown while `in_progress`, "ready" while `ready` (§4, `getWhatsAppLink`).
@@ -385,6 +388,8 @@ Pure functions (step 1.3) take everything through `ctx` and never read the clock
 
 ```ts
 type Sides = 'single' | 'duplex';
+type ServiceType = 'exam_questions' | 'results' | 'quality' | 'answer_sheets';
+type BookingStatus = 'booked' | 'in_progress' | 'ready' | 'delivered' | 'cancelled' | 'no_show';
 interface JobSpec    { models: number; pagesPerModel: number; copies: number; sides: Sides }
 interface Quantities { impressions: number; sheets: number }
 interface Machine    { id: number; minSheets: number; maxSheets: number | null; supportsDuplex: boolean;
@@ -392,6 +397,19 @@ interface Machine    { id: number; minSheets: number; maxSheets: number | null; 
 interface Window     { open: Date; close: Date }                  // one working day
 interface Busy       { machineId: number; start: Date; end: Date | null; bookingId?: number }  // holding bookings and maintenance rows
 interface Placement  { machineId: number; startsAt: Date; endsAt: Date }
+interface Booking extends JobSpec, Placement {
+  id: number; collegeId: number; status: BookingStatus; reference: string;
+  doctorPhone: string; subject: string; needsReschedule: boolean;
+  rescheduleReason: 'maintenance' | 'delay_no_slot' | 'machine_change' | null;
+  collegeName: string; machineName: string;   // joined for display (WhatsApp text, daily sheet)
+}
+interface Settings {                          // the §5 keys in camelCase
+  workStart: string; workEnd: string; workingWeekdays: number[];
+  largeJobThreshold: number; largeJobsPerDay: number;
+  editDeadlineMinutes: number; delayDeadlineMinutes: number;
+  suggestionSearchDays: number; partWarnPercent: number;
+}
+interface StockAlert { kind: 'low_stock' | 'part_near_end' | 'paper_short'; itemId?: number; machinePartId?: number; date?: string }
 
 interface ScheduleContext {
   now: Date;
@@ -403,11 +421,14 @@ interface ScheduleContext {
   busy: Busy[];
   largeJobsByDate: Map<string, number>;  // holding bookings with impressions > large_job_threshold
   loadMinutes(machineId: number, date: string): number;   // minutes of holding bookings that day
-  ignoreBookingId?: number;              // this booking's own interval counts as free (edit, delay, move)
+  ignoreBookingId?: number;              // the booking being edited, delayed or moved (see below)
 }
 type Refusal = 'day_closed' | 'past' | 'hour_full' | 'large_job_limit' | 'saturday_quota'
              | 'no_machine' | 'no_free_slot' | 'too_long';
 ```
+
+- The loader builds `ctx` without the booking named by `ignoreBookingId`: it is absent from `busy`, `loadMinutes`, `largeJobsByDate` and `usedImpressions`. The pure functions never subtract it again.
+- `usedImpressions` = sum of `impressions` of this college's holding bookings on that date (own and on-behalf).
 
 Example machines used below (placeholders, not the real seed):
 
@@ -441,8 +462,9 @@ function quantities(job: JobSpec): Quantities
 
 ```ts
 function durationMinutes(job: JobSpec, m: Machine): number
-// raw = models × m.setupMinutesPerModel + impressions ÷ m.speedPerHour × 60
-// result = raw rounded up to a multiple of 10, minimum 10
+// raw minutes = models × setup + impressions × 60 ÷ speed, rounded up to a multiple of 10, minimum 10.
+// Integer arithmetic only (a float form such as 2500 / 600 * 60 = 250.00000000000003 rounds to 260):
+// result = max(10, ceil((models × setup × speed + impressions × 60) / (speed × 10)) × 10)
 ```
 
 | Job | Machine | raw | result |
@@ -470,7 +492,7 @@ function isFreeOn(m: Machine, interval: { start: Date; end: Date }, ctx: Schedul
 // no holding booking and no maintenance row on m overlaps the interval (ctx.ignoreBookingId excepted)
 ```
 
-Full eligibility for an interval = `isStaticEligible && isFreeOn`. Machine order, wherever two machines compete: `tierGroup` ascending, then `priority` ascending, then `loadMinutes` that day ascending, then `id`.
+Full eligibility for an interval = `isStaticEligible && isFreeOn`. Machine order, when two machines compete at the same start: `tierGroup` ascending, then `priority` ascending, then `loadMinutes` that day ascending, then `id`. Functions below that also compare starts give their own full key.
 
 Tier edges, single-sided job:
 
@@ -496,7 +518,6 @@ function dayRefusal(job: JobSpec, date: string, ctx: ScheduleContext): Refusal |
 // 'day_closed'      workingWindow() is null
 // 'large_job_limit' impressions > large_job_threshold && largeJobsByDate(date) >= large_jobs_per_day
 // 'saturday_quota'  date is open only by approval && usedImpressions + impressions > approvedQuantity
-// the booking named by ctx.ignoreBookingId is left out of both counts
 ```
 
 Examples (threshold 6,000, limit 2): a day already holds jobs of 7,200 and 9,000 impressions. A new job of 6,000 is not large ("above 6,000" is strict) → allowed. A new job of 6,001 → `large_job_limit`, the suggestion moves to the next open day. A holiday on a weekday → `day_closed` for everyone. A Saturday approved for college A up to 5,000 with 3,800 used: A's 1,000 job is allowed, A's 1,500 job → `saturday_quota`, college B → `day_closed`.
@@ -517,8 +538,9 @@ function placeInHour(job: JobSpec, date: string, hour: number, ctx: ScheduleCont
 // the end may run past the hour, never past window.close
 
 function nearestFreeStart(job: JobSpec, date: string, hour: number, ctx: ScheduleContext): Placement | Refusal
-// used when placeInHour() refuses. On the requested date, then on each later open date
-// up to settings.suggestion_search_days: among all free starts of that date take the smallest
+// used when placeInHour() refuses. On the start date, then on each later date up to
+// suggestion_search_days calendar days after the start date, skipping dates that are closed
+// or refused by dayRefusal(): among all free starts of that date take the smallest
 // (|s − hour:00 of that date|, tierGroup, s, priority, loadMinutes, id). The first date with a candidate wins.
 // A suggestion is never booked until the coordinator accepts it.
 ```
@@ -529,6 +551,12 @@ Example B — a full hour. Same job and same M1, but M2, M3 and M4 are busy 09:0
 
 Example C — closed day. The coordinator asks for Friday (not a working weekday): `day_closed`, suggestion = the nearest start to that hour on the next open day.
 
+Refusal order and results:
+
+- `placeInHour` checks in this order and returns the first hit: `past` (date before today, or no grid start of that hour is ≥ `ctx.now` rounded up) · `no_machine` (no static-eligible machine) · `too_long` · `day_closed` (also when the hour lies outside `[work_start, work_end)`) · `large_job_limit` · `saturday_quota` · `hour_full`.
+- `nearestFreeStart` is not called after `no_machine` or `too_long`. After any other refusal it searches from `max(requested date, today)`; nothing found → `no_free_slot`.
+- `getAvailability` = `exact` (the `placeInHour` placement) · else `suggestion` (the `nearestFreeStart` placement, `reason` = the `placeInHour` refusal) · else `none` with `reason` = `no_machine` / `too_long` (+ `maxCopies`) / `no_free_slot`.
+
 ### 3.6 A job longer than the day (manual split, plan §6.2)
 
 ```ts
@@ -536,11 +564,12 @@ function maxCopiesInOneDay(job: JobSpec, ctx: ScheduleContext): number
 // E = machines static-eligible for the job as entered (never empty here: 'no_machine' is answered first)
 // dayMinutes = work_end − work_start
 // result = the largest, over E, of
-//   floor((dayMinutes − models × setup_m) × speed_m ÷ (60 × models × pagesPerModel)), never below 0
+//   floor(((dayMinutes − models × setup_m) × speed_m) / (60 × models × pagesPerModel)), never below 0
+//   (one integer division, no floating point)
 // i.e. the most copies the fastest eligible machine finishes in one full working day
 ```
 
-A booking is one interval on one machine inside one working day, and the system never splits a job. A job is too long when `job.copies > maxCopiesInOneDay(job, ctx)`, which is the same as "no eligible machine has `durationMinutes(job, m) <= dayMinutes`". `placeInHour` and `nearestFreeStart` check this first and answer `too_long`: no suggestion is searched, nothing is written. `getAvailability` and `createBooking` pass on `too_long` with `maxCopies`, and the form shows:
+A booking is one interval on one machine inside one working day, and the system never splits a job. A job is too long when `job.copies > maxCopiesInOneDay(job, ctx)`, which is the same as "no eligible machine has `durationMinutes(job, m) <= dayMinutes`". `placeInHour` checks this right after `past` and `no_machine` (order in §3.5) and answers `too_long`: no suggestion is searched, nothing is written. `getAvailability` and `createBooking` pass on `too_long` with `maxCopies`, and the form shows:
 
 > هذا العمل لا يكفيه يوم دوام واحد على أي آلة مناسبة. أقصى عدد نسخ في حجز واحد: {maxCopies}. قسّم العمل إلى عدة حجوزات.
 
@@ -562,13 +591,13 @@ function latestFreeStart(booking: Booking, ctx: ScheduleContext): Placement | nu
 // winner: the latest s; ties by (tierGroup, priority, loadMinutes, id); the end comes from that machine's duration
 ```
 
-- **`editBooking`**. College: status `booked` and `now ≤ starts_at − edit_deadline_minutes`. Admin: status `booked`, any time. If none of `copies`, `models`, `pages_per_model`, `sides`, day or hour changes, it is a plain update. Otherwise the booking is placed again exactly like a new one (`ignoreBookingId` set); no placement → nothing changes and the suggestion is returned. A successful new placement clears `needs_reschedule`. An admin edit is audited and, when the time changes, sends `booking_rescheduled`.
+- **`editBooking`**. College: status `booked` and `now ≤ starts_at − edit_deadline_minutes`. Admin: status `booked`, any time. If none of `copies`, `models`, `pages_per_model`, `sides`, day or hour changes, it is a plain update: `UPDATE … WHERE id = $1 AND status = 'booked'` (college: `AND starts_at >= $now + edit_deadline`); zero rows → `not_editable`. Otherwise the booking is placed again exactly like a new one (`ignoreBookingId` set); no placement → nothing changes and the suggestion is returned, which the coordinator may accept with `accept` exactly as for `createBooking` (types in §4). The reference stays the same. A successful new placement clears `needs_reschedule`. An admin edit is audited and, when the time changes, sends `booking_rescheduled`.
 - **`sendDelayNotice`**. College (own). Guards: status `booked`, `delay_notice_at IS NULL`, `needs_reschedule = false`, `now ≤ starts_at − delay_deadline_minutes`. Writes `delay_notice_at = now`, `delayed_from = old starts_at`, then:
   - `latestFreeStart` found → `machine_id`, `starts_at`, `ends_at` updated; the old interval is free from that moment;
   - none → the interval stays, `needs_reschedule = true`, `reschedule_reason = 'delay_no_slot'`, `booking_needs_reschedule` to the admins. The admin decides with `moveBooking` or `cancelBooking`.
-- **`moveBooking(bookingId, { machineId, startsAt })`**. Admin; status `booked` or `in_progress`. The target must pass `isStaticEligible`, `isFreeOn`, the working window and, when the day changes, `dayRefusal`. Writes the new machine and interval, clears the flag, audit, `booking_rescheduled` to the college.
+- **`moveBooking(bookingId, { machineId, startsAt })`**. Admin; status `booked` or `in_progress`. The target must pass `isStaticEligible`, `isFreeOn`, the working window, when the day changes `dayRefusal`, and, for a `booked` booking, `startsAt ≥ ctx.now` rounded up to the grid (an `in_progress` job may keep a past start). Writes the new machine and interval, clears the flag, audit, `booking_rescheduled` to the college.
 
-Example — delay. A 300-impression booking sits on M1 at 11:00–11:20; the notice arrives at 09:45 (75 minutes before, accepted). M1 is busy 14:00–15:00, the other machines are free in the afternoon. Latest starts: M1 13:40 (20 min), M2 14:50 (10 min), M3 14:40 (20 min), M4 14:50 (10 min). Latest is 14:50 on M2 and M4; M2 wins the tie (tier group 401 before 801). Result: M2 14:50–15:00, `delayed_from = 11:00`, M1 11:00–11:20 is free again. A second notice on this booking is refused. Had no eligible machine had a free start after 11:00, the booking would stay at 11:00 with the flag and wait in the admin list.
+Example — delay. A 1 × 2 × 150 single-sided booking (300 impressions) sits on M1 at 11:00–11:20; the notice arrives at 09:45 (75 minutes before, accepted). M1 is busy 14:00–15:00, the other machines are free in the afternoon. Latest starts: M1 13:40 (20 min), M2 14:50 (10 min), M3 14:40 (20 min), M4 14:50 (10 min). Latest is 14:50 on M2 and M4; M2 wins the tie (tier group 401 before 801). Result: M2 14:50–15:00, `delayed_from = 11:00`, M1 11:00–11:20 is free again. A second notice on this booking is refused. Had no eligible machine had a free start after 11:00, the booking would stay at 11:00 with the flag and wait in the admin list.
 
 ### 3.8 Maintenance and reassignment
 
@@ -581,11 +610,11 @@ function reassignSameTime(booking: Booking, ctx: ScheduleContext): Placement | n
 
 - **`startMaintenance(machineId, { startsAt, endsAt | null, reason })`**. Admin. `startsAt` = now ("stop now") or a future instant (planned window). In one transaction: insert the row, then for every booking on that machine with status `booked` or `in_progress` whose interval overlaps the window, in `starts_at` order:
   - `reassignSameTime` found → update `machine_id` and `ends_at`; audit `booking.auto_move`; no notification (the time did not change);
-  - none → `needs_reschedule = true`, `reschedule_reason = 'maintenance'`; audit; `booking_needs_reschedule` to the college and the admins.
+  - none → when the row is not flagged yet: `needs_reschedule = true`, `reschedule_reason = 'maintenance'`; audit; `booking_needs_reschedule` to the college and the admins. A row already flagged (for example `delay_no_slot`) keeps its reason; audit only.
   The move runs when the stop is recorded, also for a window that starts later. From then on the window is busy time, so no new booking lands in it.
-- **`endMaintenance(maintenanceId)`**. Admin. Sets `ends_at = now` when it was NULL or later than now (`ends_at = starts_at` when the window has not started), `ended_by`, `ended_at`. Then every booking still on that machine with `reschedule_reason = 'maintenance'`, `starts_at > now` and no remaining overlap with a maintenance row gets its flag cleared and the college gets `booking_restored`.
+- **`endMaintenance(maintenanceId)`**. Admin. Sets `ends_at = now` when it was NULL or later than now (`ends_at = starts_at` when the window has not started), `ended_by`, `ended_at`. Then every booking still on that machine with `reschedule_reason = 'maintenance'`, `starts_at > now`, no remaining overlap with a maintenance row, and whose machine still passes `isStaticEligible` for the job gets its flag cleared and the college gets `booking_restored`. (A flagged job already `in_progress` is cleared by `markReady`, T3.)
 - **`listNeedsReschedule()`** = `SELECT … WHERE needs_reschedule ORDER BY starts_at` (admin list); each row is resolved by `moveBooking` or `cancelBooking`.
-- **Archiving a machine, or an edit that makes a future `booked` booking on it ineligible** (duplex removed, `max_sheets` lowered): the affected bookings go through the same two branches.
+- **Archiving a machine, or an edit that makes a booking on it ineligible** (duplex removed, `max_sheets` lowered): affected = bookings on that machine with status `booked` and `starts_at > now` that fail `isStaticEligible`. They go through the same two branches; branch "none" writes `reschedule_reason = 'machine_change'`. `unarchiveMachine` restores nothing.
 
 Example. M2 gets a planned stop 10:00–12:00, recorded the day before.
 
@@ -599,10 +628,12 @@ If the admin reactivates M2 at 10:40, B2 (11:00, still on M2, no overlap left) i
 
 ### 3.9 Concurrency
 
-- Every transaction that creates a booking, changes a booking's `machine_id` / `starts_at` / `ends_at`, or writes `machine_maintenance` starts with `SELECT pg_advisory_xact_lock(7001)` (one scheduling lock for the whole centre), then loads `ctx`, decides and writes. This makes free-interval search, the large-job count, the Saturday quota, the reference number and the booking-vs-maintenance rule atomic.
-- `bookings_no_overlap` stays the final authority. On SQLSTATE `23P01`, `40001` or `40P01` the transaction is retried from the start, at most 3 times; then the action returns `slot_taken` with a fresh suggestion.
+- Scheduling transactions run at READ COMMITTED (the PostgreSQL default), never REPEATABLE READ or SERIALIZABLE: there the snapshot is taken by the lock statement before it waits, so every read after the lock would be stale.
+- Every transaction that creates a booking; may change a booking's `machine_id` / `starts_at` / `ends_at` / `needs_reschedule`; writes `machine_maintenance`; writes `machines` (`createMachine`, `updateMachine`, `archiveMachine`, `unarchiveMachine`); or runs `addHoliday` starts with `SELECT pg_advisory_xact_lock(7001)` (one scheduling lock for the whole centre), then loads `ctx`, decides and writes. This makes free-interval search, the large-job count, the Saturday quota, the reference number, the booking-vs-maintenance rule and the holiday check atomic.
+- Under the lock, every UPDATE of a booking's placement or flag also has `AND status IN ('booked', 'in_progress')` (edit and delay: `AND status = 'booked'`). Zero rows = the booking left a holding state meanwhile: skipped by `startMaintenance` and archive, refused for move, edit and delay.
+- `bookings_no_overlap` stays the final authority. On SQLSTATE `23P01` or `40P01` the transaction is retried from the start, at most 3 times; then the action returns `slot_taken` with a fresh suggestion.
 - Reference number, under the same lock: `ref_seq = coalesce(max(ref_seq), 0) + 1` for `ref_year` = current year; `UNIQUE (ref_year, ref_seq)` is the backstop.
-- State transitions (§2) do not take the lock; they rely on `WHERE status = $from`.
+- State transitions (§2) do not take the lock; they rely on the guards in their `WHERE` (§2 rules).
 
 ### 3.10 Small helpers
 
@@ -637,7 +668,8 @@ Rules for every action:
 1. The first line is the role guard (`requireRole`). No session, inactive user or wrong role → refused before anything is read.
 2. A `college` user's `college_id` comes from the session, never from the request. "own" below means `row.college_id = session.college_id`; any other row answers "not found".
 3. Only an admin may pass a `collegeId` (booking on behalf).
-4. Input is validated with Zod before the transaction.
+4. Input is validated with Zod before the transaction. Form bounds (same as the §1.7 CHECKs): `copies` 1–20,000, `models` 1–50, `pages_per_model` 1–500.
+5. Admin exceptions to plan §3 "everything" (owner, 2026-11-25): the admin does not send delay notices (uses `moveBooking`) and does not file Saturday requests (decides them).
 
 `✓` allowed · `own` own college's rows only · `—` refused.
 
@@ -656,7 +688,7 @@ Rules for every action:
 | `startMaintenance`, `endMaintenance`, `listMaintenance` | — | — | ✓ | §3.8 |
 | `listNeedsReschedule`, `moveBooking` | — | — | ✓ | §3.7, §3.8 |
 | **Bookings** | | | | |
-| `getAvailability` | own | — | ✓ | returns an exact placement, a suggestion or a refusal; writes nothing |
+| `getAvailability` | own | — | ✓ | returns an exact placement, a suggestion or a refusal; writes nothing; `bookingId` (own booking) for an edit |
 | `createBooking` | own | — | ✓ | T1; admin = on behalf |
 | `getBooking` | own | ✓ | ✓ | |
 | `listBookings` | own | — | ✓ | |
@@ -684,7 +716,7 @@ Rules for every action:
 | `replaceMachinePart` | — | — | ✓ | closes the old row, new row at 0, movement `consume −1` when the part has a stock item |
 | **Settings** | | | | |
 | `getSettings`, `updateSettings` | — | — | ✓ | §5 |
-| `listHolidays`, `addHoliday`, `removeHoliday` | — | — | ✓ | |
+| `listHolidays`, `addHoliday`, `removeHoliday` | — | — | ✓ | `addHoliday` refused while the date has holding bookings (§5) |
 | **Reports and audit** | | | | |
 | `reportByCollege(from, to)` | — | — | ✓ | bookings, impressions, sheets, cancelled, no-shows, delay notices |
 | `reportByMachine(from, to)` | — | — | ✓ | bookings, impressions, booked minutes, downtime from `machine_maintenance` |
@@ -712,7 +744,20 @@ type CreateBookingResult =
   | { ok: false; error: 'validation' | 'slot_taken' | 'needs_confirmation' | 'refused'; availability?: Availability };
 ```
 
-Without `accept`, a booking is written only when availability is `exact`. A `suggestion` writes nothing and returns `needs_confirmation`; `none` writes nothing and returns `refused`. With `accept`, the placement is checked again at exactly that machine and start; if it is no longer free, nothing is written and the result is `slot_taken` with fresh availability.
+Without `accept`, a booking is written only when availability is `exact`. A `suggestion` writes nothing and returns `needs_confirmation`; `none` writes nothing and returns `refused`.
+
+With `accept`, the server uses only `accept.machineId` and `accept.startsAt`; `endsAt` = `startsAt + durationMinutes(job, machine)`. Under the lock it requires: start on the grid and ≥ `ctx.now` rounded up, `isStaticEligible`, not `too_long`, `workingWindow` open and `endsAt ≤ close`, `dayRefusal` null, `isFreeOn`. Any failure → nothing written, `slot_taken` with fresh availability.
+
+```ts
+interface EditBookingInput extends BookingForm { bookingId: number; date: string; hour: number; accept?: Placement }
+type EditBookingResult =
+  | { ok: true;  booking: { id: number; reference: string }; examDateWarning: boolean }   // same reference kept
+  | { ok: false; error: 'validation' | 'slot_taken' | 'needs_confirmation' | 'refused' | 'not_editable';
+      availability?: Availability };                                     // 'not_editable' = status or deadline
+interface GetAvailabilityInput extends JobSpec { collegeId?: number; date: string; hour: number; bookingId?: number }  // collegeId: admin only; bookingId sets ignoreBookingId, own booking only
+```
+
+`accept` works for an edit exactly as for `createBooking`.
 
 ## 5. Settings keys
 
@@ -730,7 +775,7 @@ Rows of `settings`; `value` is JSON. Seeded with the defaults.
 | `suggestion_search_days` | `14` | how many days ahead the nearest-start search looks | integer 1–60 |
 | `part_warn_percent` | `90` | a part alerts when its counter reaches this share of its life | integer 1–100 |
 
-Holidays live in `holidays`. Changing hours or weekdays never moves existing bookings. Constants that are not settings: time zone, `SLOT_MINUTES = 10`, one delay notice per booking, scheduling lock key `7001`, 3 retries.
+Holidays live in `holidays`. Changing hours or weekdays never moves existing bookings. `addHoliday` is refused while that date has holding bookings; the answer lists them, and the admin moves or cancels them first (owner, 2026-11-25). Constants that are not settings: time zone, `SLOT_MINUTES = 10`, one delay notice per booking, scheduling lock key `7001`, 3 retries.
 
 ## 6. Notifications and audit
 
@@ -738,7 +783,7 @@ Holidays live in `holidays`. Changing hours or weekdays never moves existing boo
 |---|---|---|
 | `booking_ready` | college | `markReady` |
 | `booking_no_show` | college | `markNoShow` |
-| `booking_needs_reschedule` | college and admins (maintenance); admins (delay with no slot) | `startMaintenance`, machine archive or edit, `sendDelayNotice` |
+| `booking_needs_reschedule` | college and admins (maintenance, machine change); admins (delay with no slot) | `startMaintenance`, machine archive or edit, `sendDelayNotice` |
 | `booking_rescheduled` | college | `moveBooking`, admin `editBooking` that changes the time |
 | `booking_restored` | college | `endMaintenance` |
 | `booking_cancelled` | college | admin `cancelBooking` |
@@ -794,10 +839,12 @@ Audited actions (`audit_log.action`), written by the `audit()` helper inside the
 | Audit log, admin only | `audit_log` (§1.13), §6, `listAuditLog` |
 | Reports | the four `report…` actions (§4) |
 | Roles; a college sees only its own data; no self sign-up | matrix and rules 1–3 (§4), `users` (§1.2) |
+| Starts and durations on the 10-minute grid (plan §6.4) | `SLOT_MINUTES`, grid CHECKs (§1.7), `durationMinutes` (§3.2) |
+| Same person hands in and collects (plan §6.5) | one `recipient_name`; identity checked at T2 only |
 
 ## 8. Choices made here (not stated in plan.md)
 
-To be confirmed by the owner or overturned at the Opus 5.5 review.
+All approved by the owner on 2026-11-25 (1–16 before the Opus 5.5 review, 17–20 while applying it). They are settled product decisions: a review checks that the rest of this file follows them, it does not reopen them.
 
 1. Inside the chosen hour the order is tier group → earliest start → priority → least loaded. Among larger machines the nearest tier comes first.
 2. A suggestion is the start nearest to the requested hour, same day first, then later days up to `suggestion_search_days` (default 14).
@@ -815,3 +862,7 @@ To be confirmed by the owner or overturned at the Opus 5.5 review.
 14. One scheduling lock for the whole centre instead of per-machine locks.
 15. Operators do not see stock. WhatsApp goes to the doctor's phone (the only phone on the form).
 16. Default working weekdays are Sunday–Thursday until the owner gives the real ones.
+17. Form bounds per booking: `copies` 1–20,000, `models` 1–50, `pages_per_model` 1–500 (typing errors only; the real limit is one working day).
+18. An `in_progress` job flagged by a stop can still be finished by the operator: `markReady` clears the flag. A flagged job that has not started is moved by the admin before `confirmIdentity`.
+19. `addHoliday` is refused while the date has holding bookings; the admin moves or cancels them first.
+20. The admin does not send delay notices or file Saturday requests; uses `moveBooking` and decides requests instead.
