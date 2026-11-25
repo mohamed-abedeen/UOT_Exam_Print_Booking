@@ -4,7 +4,7 @@
 import { eq, sql } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { getDb } from "@/db";
-import { auditLog, bookings, colleges, holidays, machineMaintenance, machines, settings, users } from "@/db/schema";
+import { auditLog, bookings, colleges, holidays, machineMaintenance, machines, notifications, settings, users } from "@/db/schema";
 import { createBooking, getAvailability } from "@/lib/actions/bookings";
 import { AuthError, SESSION_COOKIE, type Actor } from "@/lib/auth/guard";
 import { createSession } from "@/lib/auth/session";
@@ -741,6 +741,12 @@ describe.skipIf(!process.env.DATABASE_URL)("step 1.4: booking transaction", () =
         collegeId: collegeIds.B,
       });
       expect(audits[0].details).toMatchObject({ reference: "2026-0001", machineId: m.M1 });
+      // Step 2.1: `booking_on_behalf` to each active user of that college, nobody else.
+      const rows = await getDb().select().from(notifications);
+      expect(rows.map((n) => [n.userId, n.type, n.bookingId])).toEqual([
+        [ids.collegeB, "booking_on_behalf", result.booking.id],
+      ]);
+      expect(rows[0].data).toMatchObject({ reference: "2026-0001" });
     });
 
     it("an inactive or unknown college cannot be booked for", async () => {

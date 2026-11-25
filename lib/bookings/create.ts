@@ -9,6 +9,7 @@ import { audit } from "@/lib/auth/audit";
 import { AuthError, collegeScope, type Actor } from "@/lib/auth/guard";
 import { availabilityFor, checkAccepted, type Availability } from "@/lib/scheduling/availability";
 import { examDateWarning, formatReference, isFourPartName, normalizePhone } from "@/lib/scheduling/helpers";
+import { bookingData, notifyCollege } from "@/lib/notifications";
 import { loadContext, takeSchedulingLock } from "@/lib/scheduling/load";
 import { localDate } from "@/lib/scheduling/time";
 import type { JobSpec, Placement } from "@/lib/scheduling/types";
@@ -200,8 +201,14 @@ function tryCreate(
       })
       .returning({ id: bookings.id });
 
-    // The `booking_on_behalf` notification to the college arrives with the notifications table (step 2.1).
     if (onBehalf) {
+      await notifyCollege(
+        tx,
+        collegeId,
+        "booking_on_behalf",
+        row.id,
+        bookingData({ reference, startsAt: placement.startsAt, endsAt: placement.endsAt }),
+      );
       await audit(tx, actor, {
         action: "booking.create_on_behalf",
         entity: "bookings",

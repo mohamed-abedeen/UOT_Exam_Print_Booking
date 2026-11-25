@@ -41,6 +41,17 @@ export const bookingStatus = pgEnum("booking_status", [
   "no_show",
 ]);
 export const rescheduleReason = pgEnum("reschedule_reason", ["maintenance", "delay_no_slot", "machine_change"]);
+export const notificationType = pgEnum("notification_type", [
+  "booking_ready",
+  "booking_no_show",
+  "booking_needs_reschedule",
+  "booking_rescheduled",
+  "booking_restored",
+  "booking_cancelled",
+  "booking_on_behalf",
+  "saturday_requested",
+  "saturday_decided",
+]);
 
 // ---- 1.1 colleges
 
@@ -296,6 +307,33 @@ export const bookings = pgTable(
     index("bookings_college_idx").on(t.collegeId, t.workDate),
     index("bookings_status_idx").on(t.status, t.workDate),
     index("bookings_reschedule_idx").on(t.startsAt).where(sql`${t.needsReschedule}`),
+  ],
+);
+
+// ---- 1.11 notifications (step 2.1). `saturday_request_id` arrives with `saturday_requests` (step 2.6).
+
+export const notifications = pgTable(
+  "notifications",
+  {
+    id: id(),
+    userId: ref("user_id").notNull(),
+    type: notificationType("type").notNull(),
+    bookingId: ref("booking_id"),
+    data: jsonb("data").notNull().default(sql`'{}'`), // values for the Arabic text
+    readAt: tstz("read_at"),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    foreignKey({ name: "notifications_user_id_fkey", columns: [t.userId], foreignColumns: [users.id] }).onDelete(
+      "cascade",
+    ),
+    foreignKey({
+      name: "notifications_booking_id_fkey",
+      columns: [t.bookingId],
+      foreignColumns: [bookings.id],
+    }).onDelete("restrict"),
+    index("notifications_user_idx").on(t.userId, t.createdAt.desc().nullsFirst()),
+    index("notifications_unread_idx").on(t.userId).where(sql`${t.readAt} IS NULL`),
   ],
 );
 

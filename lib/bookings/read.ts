@@ -1,11 +1,12 @@
 // Reads for the booking screens (contracts §4 "Bookings"). The server actions in lib/actions/bookings.ts run the
 // role guard first and call these. Not a "use server" file: nothing here is a public endpoint.
 import "server-only";
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { z } from "zod";
 import { getDb } from "@/db";
-import { bookings } from "@/db/schema";
+import { bookings, colleges, machines } from "@/db/schema";
 import { AuthError, collegeScope, type Actor } from "@/lib/auth/guard";
+import { whatsAppLink, type WhatsAppKind } from "@/lib/scheduling/helpers";
 import { loadSettings } from "@/lib/scheduling/load";
 import { localDate } from "@/lib/scheduling/time";
 import type { BookingStatus, ServiceType, Sides } from "@/lib/scheduling/types";
@@ -80,4 +81,122 @@ export async function getBookingFormConfigFor(): Promise<BookingFormConfig> {
     workingWeekdays: settings.workingWeekdays,
     today: localDate(new Date()),
   };
+}
+
+// ---- getBooking: one booking. A college: its own only (another college's answers "not found") and no machine,
+// as in its list. An operator or an admin: any booking, with the machine.
+
+export interface BookingDetail {
+  id: number;
+  reference: string;
+  collegeId: number;
+  collegeName: string;
+  onBehalf: boolean;
+  doctorName: string;
+  doctorPhone: string;
+  recipientName: string;
+  subject: string;
+  serviceType: ServiceType;
+  copies: number;
+  models: number;
+  pagesPerModel: number;
+  sides: Sides;
+  examDate: string | null;
+  impressions: number;
+  sheets: number;
+  startsAt: Date;
+  endsAt: Date;
+  status: BookingStatus;
+  needsReschedule: boolean;
+  delayNoticeAt: Date | null;
+  identityConfirmedAt: Date | null;
+  readyAt: Date | null;
+  wastedSheets: number | null;
+  deliveredAt: Date | null;
+  noShowAt: Date | null;
+  cancelledAt: Date | null;
+  cancelReason: string | null;
+  /** Operator and admin only; null for a college. */
+  machineName: string | null;
+}
+
+export type GetBookingResult = { ok: true; booking: BookingDetail } | { ok: false; error: "validation" | "not_found" };
+
+const bookingIdInput = z.strictObject({ bookingId: z.number().int().positive() });
+
+export async function getBookingFor(actor: Actor, input: unknown): Promise<GetBookingResult> {
+  const parsed = bookingIdInput.safeParse(input);
+  if (!parsed.success) return { ok: false, error: "validation" };
+  const scope = collegeScope(actor);
+  const [row] = await getDb()
+    .select({
+      id: bookings.id,
+      reference: bookings.reference,
+      collegeId: bookings.collegeId,
+      collegeName: colleges.name,
+      onBehalf: bookings.onBehalf,
+      doctorName: bookings.doctorName,
+      doctorPhone: bookings.doctorPhone,
+      recipientName: bookings.recipientName,
+      subject: bookings.subject,
+      serviceType: bookings.serviceType,
+      copies: bookings.copies,
+      models: bookings.models,
+      pagesPerModel: bookings.pagesPerModel,
+      sides: bookings.sides,
+      examDate: bookings.examDate,
+      impressions: bookings.impressions,
+      sheets: bookings.sheets,
+      startsAt: bookings.startsAt,
+      endsAt: bookings.endsAt,
+      status: bookings.status,
+      needsReschedule: bookings.needsReschedule,
+      delayNoticeAt: bookings.delayNoticeAt,
+      identityConfirmedAt: bookings.identityConfirmedAt,
+      readyAt: bookings.readyAt,
+      wastedSheets: bookings.wastedSheets,
+      deliveredAt: bookings.deliveredAt,
+      noShowAt: bookings.noShowAt,
+      cancelledAt: bookings.cancelledAt,
+      cancelReason: bookings.cancelReason,
+      machineName: machines.name,
+    })
+    .from(bookings)
+    .innerJoin(colleges, eq(colleges.id, bookings.collegeId))
+    .innerJoin(machines, eq(machines.id, bookings.machineId))
+    .where(and(eq(bookings.id, parsed.data.bookingId), scope === null ? undefined : eq(bookings.collegeId, scope)));
+  if (!row) return { ok: false, error: "not_found" };
+  // `impressions` and `sheets` are generated from NOT NULL columns; Drizzle types generated columns as nullable.
+  const booking = { ...row, impressions: row.impressions!, sheets: row.sheets! };
+  return { ok: true, booking: { ...booking, machineName: scope === null ? row.machineName : null } };
+}
+
+// ---- getWhatsAppLink (operator, admin): "started" only while in_progress, "ready" only while ready (contracts §2).
+
+export type GetWhatsAppLinkResult = { ok: true; url: string } | { ok: false; error: "validation" | "not_found" | "refused" };
+
+const whatsAppInput = z.strictObject({ bookingId: z.number().int().positive(), kind: z.enum(["started", "ready"]) });
+const SHOWN_WHILE: Record<WhatsAppKind, BookingStatus> = { started: "in_progress", ready: "ready" };
+
+export async function getWhatsAppLinkFor(actor: Actor, input: unknown): Promise<GetWhatsAppLinkResult> {
+  if (actor.role !== "operator" && actor.role !== "admin") throw new AuthError();
+  const parsed = whatsAppInput.safeParse(input);
+  if (!parsed.success) return { ok: false, error: "validation" };
+  const { bookingId, kind } = parsed.data;
+  const [row] = await getDb()
+    .select({
+      status: bookings.status,
+      doctorPhone: bookings.doctorPhone,
+      subject: bookings.subject,
+      reference: bookings.reference,
+      collegeName: colleges.name,
+      machineName: machines.name,
+    })
+    .from(bookings)
+    .innerJoin(colleges, eq(colleges.id, bookings.collegeId))
+    .innerJoin(machines, eq(machines.id, bookings.machineId))
+    .where(eq(bookings.id, bookingId));
+  if (!row) return { ok: false, error: "not_found" };
+  if (row.status !== SHOWN_WHILE[kind]) return { ok: false, error: "refused" };
+  return { ok: true, url: whatsAppLink(kind, row) };
 }
