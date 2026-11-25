@@ -8,6 +8,13 @@ import {
   type CreateBookingResult,
   type GetAvailabilityResult,
 } from "@/lib/bookings/create";
+import {
+  getBookingFormConfigFor,
+  listBookingsFor,
+  type BookingFormConfig,
+  type ListBookingsResult,
+} from "@/lib/bookings/read";
+
 import { getDayQueueFor, type GetDayQueueResult } from "@/lib/bookings/queue";
 
 const BOOKERS = ["college", "admin"] as const;
@@ -23,6 +30,18 @@ export async function getAvailability(input: unknown): Promise<GetAvailabilityRe
 export async function createBooking(input: unknown): Promise<CreateBookingResult> {
   const actor = await requireRole(BOOKERS);
   return createBookingFor(actor, input);
+}
+
+/** A college: its own bookings. An admin: all, or one college's with `{ collegeId }`. Newest first. */
+export async function listBookings(input?: unknown): Promise<ListBookingsResult> {
+  const actor = await requireRole(BOOKERS);
+  return listBookingsFor(actor, input);
+}
+
+/** Working hours, working weekdays and today's date for the booking form. Nothing else from the settings. */
+export async function getBookingFormConfig(): Promise<BookingFormConfig> {
+  await requireRole(BOOKERS);
+  return getBookingFormConfigFor();
 }
 
 /** The operator's day queue: bookings of one business date by start time and machine; read-only. */
