@@ -1,7 +1,7 @@
 // The scheduling lock and the loader of `ctx` (contracts §3 intro, §3.9).
 // A transaction that writes a placement calls takeSchedulingLock() first, then loadContext() on the same `tx`.
 import "server-only";
-import { and, gt, gte, isNull, notInArray, or, sql } from "drizzle-orm";
+import { and, gt, gte, isNull, ne, notInArray, or, sql } from "drizzle-orm";
 import type { Executor, Tx } from "@/db";
 import { bookings, holidays, machineMaintenance, machines, settings as settingsTable } from "@/db/schema";
 import { atMinutes, localDate } from "./time";
@@ -41,10 +41,14 @@ export async function loadSettings(ex: Executor): Promise<Settings> {
 /**
  * Everything the pure functions need, from today on. "Holding" rows (every status except cancelled and no_show)
  * occupy their interval — the same rows the constraint `bookings_no_overlap` covers.
- * Not loaded yet: Saturday approvals (the table arrives in step 2.6, so a non-working weekday is closed for
- * everyone) and `ignoreBookingId` (step 2.3).
+ * `ignoreBookingId` (an edit or a delay notice of that booking) leaves it out of `busy`, `loadMinutes` and
+ * `largeJobsByDate`. Not loaded yet: Saturday approvals (the table arrives in step 2.6, so a non-working weekday is
+ * closed for everyone).
  */
-export async function loadContext(ex: Executor, opts: { now: Date; collegeId: number }): Promise<ScheduleContext> {
+export async function loadContext(
+  ex: Executor,
+  opts: { now: Date; collegeId: number; ignoreBookingId?: number },
+): Promise<ScheduleContext> {
   const today = localDate(opts.now);
   const startOfToday = atMinutes(today, 0);
 
@@ -72,7 +76,13 @@ export async function loadContext(ex: Executor, opts: { now: Date; collegeId: nu
       impressions: bookings.impressions,
     })
     .from(bookings)
-    .where(and(notInArray(bookings.status, ["cancelled", "no_show"]), gte(bookings.workDate, today)));
+    .where(
+      and(
+        notInArray(bookings.status, ["cancelled", "no_show"]),
+        gte(bookings.workDate, today),
+        opts.ignoreBookingId === undefined ? undefined : ne(bookings.id, opts.ignoreBookingId),
+      ),
+    );
   // A cancelled planned window has ends_at = starts_at (an empty range): it blocks nothing.
   const maintenanceRows = await ex
     .select({
@@ -110,5 +120,6 @@ export async function loadContext(ex: Executor, opts: { now: Date; collegeId: nu
     busy,
     largeJobsByDate,
     loadMinutes: (machineId, date) => load.get(`${machineId}|${date}`) ?? 0,
+    ignoreBookingId: opts.ignoreBookingId,
   };
 }

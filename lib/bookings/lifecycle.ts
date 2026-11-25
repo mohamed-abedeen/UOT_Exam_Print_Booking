@@ -1,16 +1,17 @@
-// Booking state transitions T2, T3, T4, T7 (contracts §2). T5 / T6 (cancel) come with step 2.3.
+// Booking state transitions T2–T7 (contracts §2).
 // Each is one guarded UPDATE: `WHERE id = $1 AND status = $from AND <guards>`; zero rows = refused.
 // No scheduling lock (§3.9 last bullet). The server actions in lib/actions/bookings.ts run the role guard
 // and call these. Not a "use server" file: nothing here is a public endpoint.
 import "server-only";
-import { and, eq, lte, type SQL } from "drizzle-orm";
+import { and, eq, gte, inArray, lte, type SQL } from "drizzle-orm";
 import { z } from "zod";
 import { getDb, type Tx } from "@/db";
 import { bookings } from "@/db/schema";
 import { audit } from "@/lib/auth/audit";
-import { AuthError, type Actor } from "@/lib/auth/guard";
+import { AuthError, ownRows, type Actor } from "@/lib/auth/guard";
 import { bookingData, notifyCollege } from "@/lib/notifications";
-import { localDate } from "@/lib/scheduling/time";
+import { loadSettings } from "@/lib/scheduling/load";
+import { addMinutes, localDate } from "@/lib/scheduling/time";
 import type { BookingStatus } from "@/lib/scheduling/types";
 
 export type TransitionResult =
@@ -26,6 +27,16 @@ const markReadyInput = z.strictObject({
   bookingId: id,
   wastedSheets: z.number().int().min(0).max(INT_MAX),
   wasteDestroyed: z.literal(true), // the destroyed tick is required (T3)
+});
+const cancelInput = z.strictObject({
+  bookingId: id,
+  // Optional for T5, required for T6. Blank = none given.
+  reason: z
+    .string()
+    .trim()
+    .max(500)
+    .refine((s) => !s.includes("\u0000")) // PostgreSQL text cannot hold it
+    .optional(),
 });
 
 /** Every transition here is operator or admin only (contracts §4); the action's guard already said so. */
@@ -49,16 +60,17 @@ interface Moved {
 async function move(
   tx: Tx,
   bookingId: number,
-  from: BookingStatus,
+  from: BookingStatus | BookingStatus[],
   to: BookingStatus,
-  guards: SQL[],
+  guards: (SQL | undefined)[],
   set: BookingSet,
   now: Date,
 ): Promise<Moved | null> {
+  const fromStatus = Array.isArray(from) ? inArray(bookings.status, from) : eq(bookings.status, from);
   const [row] = await tx
     .update(bookings)
     .set({ ...set, status: to, updatedAt: now })
-    .where(and(eq(bookings.id, bookingId), eq(bookings.status, from), ...guards))
+    .where(and(eq(bookings.id, bookingId), fromStatus, ...guards))
     .returning({
       id: bookings.id,
       reference: bookings.reference,
@@ -70,9 +82,12 @@ async function move(
   return row ?? null;
 }
 
-/** After zero rows: "not_found" when the booking does not exist, else "refused". */
-async function missed(tx: Tx, bookingId: number): Promise<TransitionResult> {
-  const [found] = await tx.select({ id: bookings.id }).from(bookings).where(eq(bookings.id, bookingId));
+/** After zero rows: "not_found" when the booking does not exist (for a college: is not its own), else "refused". */
+async function missed(tx: Tx, bookingId: number, own?: SQL): Promise<TransitionResult> {
+  const [found] = await tx
+    .select({ id: bookings.id })
+    .from(bookings)
+    .where(and(eq(bookings.id, bookingId), own));
   return { ok: false, error: found ? "refused" : "not_found" };
 }
 
@@ -174,6 +189,44 @@ export async function markNoShowFor(actor: Actor, input: unknown): Promise<Trans
       details: { reference: row.reference },
     });
     await notifyCollege(tx, row.collegeId, "booking_no_show", row.id, bookingData(row));
+    return done(row);
+  });
+}
+
+/**
+ * T5 booked → cancelled: a college its own booking, until `edit_deadline_minutes` before the start; an admin any
+ * time. T6 in_progress → cancelled: admin only, with a reason. Releases the interval (the row leaves
+ * `bookings_no_overlap`); no stock movement. An admin cancel is audited and the college is told.
+ */
+export async function cancelBookingFor(actor: Actor, input: unknown): Promise<TransitionResult> {
+  if (actor.role !== "college" && actor.role !== "admin") throw new AuthError();
+  const parsed = cancelInput.safeParse(input);
+  if (!parsed.success) return VALIDATION;
+  const { bookingId } = parsed.data;
+  const reason = parsed.data.reason || null;
+  const own = ownRows(actor, bookings.collegeId);
+  return getDb().transaction(async (tx) => {
+    const now = new Date();
+    const set = { cancelledBy: actor.userId, cancelledAt: now, cancelReason: reason, ...FLAG_CLEARED };
+    let row: Moved | null;
+    if (actor.role === "college") {
+      const { editDeadlineMinutes } = await loadSettings(tx);
+      const deadline = gte(bookings.startsAt, addMinutes(now, editDeadlineMinutes)); // now <= starts_at − deadline
+      row = await move(tx, bookingId, "booked", "cancelled", [own, deadline], set, now);
+    } else {
+      row = await move(tx, bookingId, reason ? ["booked", "in_progress"] : "booked", "cancelled", [], set, now);
+    }
+    if (!row) return missed(tx, bookingId, own);
+    if (actor.role === "admin") {
+      await audit(tx, actor, {
+        action: "booking.admin_cancel",
+        entity: "bookings",
+        entityId: row.id,
+        collegeId: row.collegeId,
+        details: { reference: row.reference, reason },
+      });
+      await notifyCollege(tx, row.collegeId, "booking_cancelled", row.id, bookingData(row));
+    }
     return done(row);
   });
 }
