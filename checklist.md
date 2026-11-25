@@ -49,10 +49,11 @@ Login → admin adds a machine → college books → operator sees the queue.
   Requires: 1.2, 1.3.
   Create a booking under the exclusion constraint, with retry on conflict.
   Done when: a test firing parallel requests at the same hour never produces two overlapping bookings on one machine.
-- [ ] **1.5 Admin screens: machines and accounts** — Sonnet 5.5
+- [x] **1.5 Admin screens: machines and accounts** — Sonnet 5.5
   Requires: 1.2.
   Machines list, add, edit, archive. Colleges and user accounts.
   Done when: a machine added in the screen becomes bookable without a code change.
+  Note 2026-11-25 (Sonnet 5.5): built; review is in 1.8. Owner choices: archive and edit change only the machine row (the §3.8 reassign-or-flag step for bookings on it comes with the maintenance step); `setCollegeActive(false)` also deactivates the college's account and ends its sessions, reactivating the college does not bring the account back. Code: `lib/actions/machines.ts`, `lib/actions/colleges.ts`, `app/(admin)/admin/{machines,colleges,accounts}`, `components/admin/*`; `/admin` redirects to the machines screen (`next.config.ts`). Tests: `tests/admin.test.ts` (35 tests): role guard per action, a created machine comes back from `eligibleMachines()`, archive / unarchive, name rules, college cascade. Checked by hand in the browser as admin (add, edit, archive, rename, deactivate, create account with temporary password, reset). Left open: no maintenance screen (not in 1.5); priority and the other numbers only have an upper bound of 1,000,000; a hidden, kept-alive page can show its old error text when you come back to it.
 - [ ] **1.6 College screens: book and follow** — Sonnet 5.5
   Requires: 1.4.
   Booking form with live availability and the suggested nearest time, phone normalisation, exam-date warning, list of own bookings.
