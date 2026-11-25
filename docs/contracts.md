@@ -778,6 +778,30 @@ interface SendDelayNoticeInput { bookingId: number }
 type SendDelayNoticeResult =
   | { ok: true; booking: { id: number; reference: string; startsAt: Date; endsAt: Date }; moved: boolean }  // moved = false: flagged delay_no_slot
   | { ok: false; error: 'validation' | 'not_found' | 'refused' | 'slot_taken' };
+interface MoveBookingInput { bookingId: number; machineId: number; startsAt: Date }   // startsAt on the grid
+type MoveRefusal = 'not_eligible' | 'past' | 'day_closed' | 'outside_hours' | 'large_job_limit' | 'saturday_quota' | 'busy';
+type MoveBookingResult =
+  | { ok: true; booking: { id: number; reference: string; machineId: number; startsAt: Date; endsAt: Date } }
+  | { ok: false; error: 'validation' | 'not_found' | 'refused' }          // 'refused' = not booked / in_progress
+  | { ok: false; error: 'slot_taken'; reason: MoveRefusal };              // nothing changes
+```
+
+Maintenance and machine writes (§3.8). `moved` = same start on another machine; `flagged` = left in the admin list (also a row flagged before).
+
+```ts
+interface StartMaintenanceInput { machineId: number; startsAt?: Date; endsAt: Date | null; reason: string }
+// no startsAt = stop now (server clock after the lock); a given startsAt must be after now; endsAt null or after the
+// start; free instants, not the grid
+type Touched = { id: number; reference: string };
+type StartMaintenanceResult =
+  | { ok: true; maintenance: { id: number }; moved: Touched[]; flagged: Touched[] }
+  | { ok: false; error: 'validation' | 'not_found' | 'overlaps' };    // not_found also for an archived machine
+type EndMaintenanceResult =                                          // input { maintenanceId }
+  | { ok: true; restored: Touched[] }
+  | { ok: false; error: 'validation' | 'not_found' | 'refused' };     // refused = already ended or cancelled
+// listMaintenance({ machineId? }): every row, newest start first, no paging; each row: machine name, start, end,
+// reason, creator's and ender's names, ended_at, minutes (null while open)
+// updateMachine, archiveMachine, unarchiveMachine: { ok: true } gains moved and flagged (unarchive: both empty)
 ```
 
 ## 5. Settings keys
@@ -888,3 +912,6 @@ All approved by the owner on 2026-11-25 (1–16 before the Opus 5.5 review, 17�
 19. `addHoliday` is refused while the date has holding bookings; the admin moves or cancels them first.
 20. The admin does not send delay notices or file Saturday requests; uses `moveBooking` and decides requests instead.
 21. An admin edit sends `booking_rescheduled` only when the start changes, as for an automatic move (7). (Owner, 2026-11-25, step 2.3.)
+22. A refused `moveBooking` target answers `slot_taken` with the rule that failed (`MoveRefusal`, §4). (Owner, 2026-11-25, step 2.4.)
+23. A stop without `startsAt` starts now; a planned stop starts in the future; stop times are free instants, not the 10-minute grid. (Owner, 2026-11-25, step 2.4.)
+24. `startMaintenance`, `archiveMachine` and `updateMachine` return the bookings they moved and flagged; `listMaintenance` returns every row, newest first, optionally for one machine. (Owner, 2026-11-25, step 2.4.)

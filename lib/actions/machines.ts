@@ -1,16 +1,18 @@
 "use server";
 // Machine actions (contracts §4 "Machines and maintenance"): the list is open to operator and admin (read-only
 // for the operator), the writes to the admin. Rows are never deleted; archiving sets `archived_at`.
-// Step 1.5 does not touch bookings on an archived or edited machine: the reassign-or-flag step of §3.8 comes
-// with the maintenance step (owner, 2026-11-25).
+// Archiving a machine, or an edit that makes a booking on it ineligible, reassigns or flags its future `booked`
+// bookings (§3.8 last bullet); unarchiving restores nothing.
 // Every write takes the scheduling lock first (§3.9), so a booking being placed never sees half a change.
-import { asc, eq } from "drizzle-orm";
+import { and, asc, eq, gt } from "drizzle-orm";
 import { z } from "zod";
-import { getDb } from "@/db";
-import { machines } from "@/db/schema";
+import { getDb, type Tx } from "@/db";
+import { bookings, machines } from "@/db/schema";
 import { audit } from "@/lib/auth/audit";
-import { requireRole } from "@/lib/auth/guard";
+import { requireRole, type Actor } from "@/lib/auth/guard";
+import { reassignOrFlag, type ReassignOutcome } from "@/lib/maintenance/reassign";
 import { takeSchedulingLock } from "@/lib/scheduling/load";
+import { isStaticEligible } from "@/lib/scheduling/schedule";
 import type { Machine } from "@/lib/scheduling/types";
 
 const ADMIN = ["admin"] as const;
@@ -52,6 +54,26 @@ function uniqueViolation(error: unknown): string | null {
     if (e.code === "23505") return e.constraint_name ?? "";
   }
   return null;
+}
+
+/**
+ * §3.8 last bullet: the machine's `booked` bookings starting after now that it no longer takes (`machine` = the row
+ * as it is after the change) move to another machine at the same start, or are flagged `machine_change`.
+ */
+async function reassignIneligible(tx: Tx, actor: Actor, machine: Machine, now: Date): Promise<ReassignOutcome> {
+  const rows = await tx
+    .select({
+      id: bookings.id,
+      models: bookings.models,
+      pagesPerModel: bookings.pagesPerModel,
+      copies: bookings.copies,
+      sides: bookings.sides,
+    })
+    .from(bookings)
+    .where(and(eq(bookings.machineId, machine.id), eq(bookings.status, "booked"), gt(bookings.startsAt, now)))
+    .orderBy(asc(bookings.startsAt), asc(bookings.id));
+  const ids = rows.filter((b) => !isStaticEligible(b, machine)).map((b) => b.id);
+  return reassignOrFlag(tx, actor, ids, "machine_change", ["booked"], now);
 }
 
 const machineFields = z
@@ -109,9 +131,11 @@ export async function createMachine(input: unknown): Promise<CreateMachineResult
 
 const updateMachineInput = z.object({ machineId: id, fields: machineFields });
 
-export type UpdateMachineResult = { ok: true } | { ok: false; error: "validation" | "not_found" | "name_taken" };
+export type UpdateMachineResult =
+  | ({ ok: true } & ReassignOutcome)
+  | { ok: false; error: "validation" | "not_found" | "name_taken" };
 
-/** Replaces every editable field. Bookings already on the machine are not looked at (see the file header). */
+/** Replaces every editable field. Future bookings the machine no longer takes are reassigned or flagged. */
 export async function updateMachine(input: unknown): Promise<UpdateMachineResult> {
   const actor = await requireRole(ADMIN);
   const parsed = updateMachineInput.safeParse(input);
@@ -124,15 +148,17 @@ export async function updateMachine(input: unknown): Promise<UpdateMachineResult
       const [before] = await tx.select().from(machines).where(eq(machines.id, machineId)).for("update");
       if (!before) return { ok: false, error: "not_found" };
       const beforeFields = fieldsOf(before);
-      if (JSON.stringify(beforeFields) === JSON.stringify(fields)) return { ok: true };
-      await tx.update(machines).set({ ...fields, updatedAt: new Date() }).where(eq(machines.id, before.id));
+      if (JSON.stringify(beforeFields) === JSON.stringify(fields)) return { ok: true, moved: [], flagged: [] };
+      const now = new Date();
+      await tx.update(machines).set({ ...fields, updatedAt: now }).where(eq(machines.id, before.id));
       await audit(tx, actor, {
         action: "machine.update",
         entity: "machines",
         entityId: before.id,
         details: { before: beforeFields, after: fields },
       });
-      return { ok: true };
+      const outcome = await reassignIneligible(tx, actor, { ...fields, id: before.id, archivedAt: before.archivedAt }, now);
+      return { ok: true, ...outcome };
     });
   } catch (e) {
     if (uniqueViolation(e) === "machines_name_key") return { ok: false, error: "name_taken" };
@@ -142,7 +168,9 @@ export async function updateMachine(input: unknown): Promise<UpdateMachineResult
 
 const machineIdInput = z.object({ machineId: id });
 
-export type SetArchivedResult = { ok: true } | { ok: false; error: "validation" | "not_found" | "name_taken" };
+export type SetArchivedResult =
+  | ({ ok: true } & ReassignOutcome) // unarchive: both lists empty
+  | { ok: false; error: "validation" | "not_found" | "name_taken" };
 
 async function setArchived(input: unknown, archived: boolean): Promise<SetArchivedResult> {
   const actor = await requireRole(ADMIN);
@@ -155,7 +183,7 @@ async function setArchived(input: unknown, archived: boolean): Promise<SetArchiv
       await takeSchedulingLock(tx);
       const [before] = await tx.select().from(machines).where(eq(machines.id, machineId)).for("update");
       if (!before) return { ok: false, error: "not_found" };
-      if ((before.archivedAt !== null) === archived) return { ok: true };
+      if ((before.archivedAt !== null) === archived) return { ok: true, moved: [], flagged: [] };
       const now = new Date();
       await tx
         .update(machines)
@@ -167,7 +195,9 @@ async function setArchived(input: unknown, archived: boolean): Promise<SetArchiv
         entityId: before.id,
         details: { name: before.name },
       });
-      return { ok: true };
+      if (!archived) return { ok: true, moved: [], flagged: [] };
+      const outcome = await reassignIneligible(tx, actor, { ...before, archivedAt: now }, now);
+      return { ok: true, ...outcome };
     });
   } catch (e) {
     // unarchiving a name that an active machine already uses

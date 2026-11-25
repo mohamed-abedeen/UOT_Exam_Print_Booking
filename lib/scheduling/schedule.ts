@@ -217,6 +217,27 @@ export function latestFreeStart(booking: JobSpec & { startsAt: Date }, ctx: Sche
   return best ? placement(booking, best.m, best.start) : null;
 }
 
+// ---- §3.8 Maintenance and reassignment
+
+/**
+ * Another machine for the same start: the first static-eligible machine other than the booking's own in
+ * (tierGroup, priority, loadMinutes, id) order on which [startsAt, startsAt + its duration) is free and ends by the
+ * day's close. The end may change with that machine's speed. `ctx` must be loaded with `ignoreBookingId` = this
+ * booking. Null = no machine takes it at that time.
+ */
+export function reassignSameTime(booking: JobSpec & Placement, ctx: ScheduleContext): Placement | null {
+  const date = localDate(booking.startsAt);
+  const window = workingWindow(date, ctx);
+  if (!window) return null;
+  for (const m of eligibleMachines(booking, date, ctx)) {
+    if (m.id === booking.machineId) continue;
+    const p = placement(booking, m, booking.startsAt);
+    if (p.endsAt.getTime() > window.close.getTime()) continue;
+    if (isFreeOn(m, { start: p.startsAt, end: p.endsAt }, ctx)) return p;
+  }
+  return null;
+}
+
 // ---- §3.6 A job longer than the day
 
 /** The most copies of this job that some eligible machine finishes in one full working day. */

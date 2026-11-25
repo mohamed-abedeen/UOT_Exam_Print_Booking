@@ -174,11 +174,11 @@ describe.skipIf(!process.env.DATABASE_URL)("step 1.5: admin machines and college
       if (!created.ok) throw new Error("setup");
       const machineId = created.machine.id;
 
-      expect(await updateMachine({ machineId, fields: NEW_MACHINE })).toEqual({ ok: true });
+      expect(await updateMachine({ machineId, fields: NEW_MACHINE })).toEqual({ ok: true, moved: [], flagged: [] });
       expect(await auditRows("machine.update")).toEqual([]);
 
       const fields = { ...NEW_MACHINE, name: "آلة معدّلة", maxSheets: null, supportsDuplex: false, priority: 5 };
-      expect(await updateMachine({ machineId, fields })).toEqual({ ok: true });
+      expect(await updateMachine({ machineId, fields })).toEqual({ ok: true, moved: [], flagged: [] });
       expect(await machineRow(machineId)).toMatchObject({ name: "آلة معدّلة", maxSheets: null, supportsDuplex: false, priority: 5 });
       const [entry] = await auditRows("machine.update");
       expect(entry.details).toMatchObject({ before: { name: NEW_MACHINE.name, priority: 100 }, after: { name: "آلة معدّلة", priority: 5 } });
@@ -204,11 +204,11 @@ describe.skipIf(!process.env.DATABASE_URL)("step 1.5: admin machines and college
       const eligible = async () => eligibleMachines(job(2, 5, 20), "2026-11-29", ctxWith(await listMachines())).map((m) => m.id);
 
       expect(await eligible()).toEqual([machineId]);
-      expect(await archiveMachine({ machineId })).toEqual({ ok: true });
-      expect(await archiveMachine({ machineId })).toEqual({ ok: true }); // already archived: no second audit row
+      expect(await archiveMachine({ machineId })).toEqual({ ok: true, moved: [], flagged: [] });
+      expect(await archiveMachine({ machineId })).toEqual({ ok: true, moved: [], flagged: [] }); // already archived: no second audit row
       expect(await eligible()).toEqual([]);
       expect((await listMachines())[0].archivedAt).toBeInstanceOf(Date);
-      expect(await unarchiveMachine({ machineId })).toEqual({ ok: true });
+      expect(await unarchiveMachine({ machineId })).toEqual({ ok: true, moved: [], flagged: [] });
       expect(await eligible()).toEqual([machineId]);
       expect(await auditRows("machine.archive")).toHaveLength(1);
       expect(await auditRows("machine.unarchive")).toHaveLength(1);

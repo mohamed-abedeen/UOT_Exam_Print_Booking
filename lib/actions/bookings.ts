@@ -10,8 +10,10 @@ import {
 } from "@/lib/bookings/create";
 import {
   editBookingFor,
+  moveBookingFor,
   sendDelayNoticeFor,
   type EditBookingResult,
+  type MoveBookingResult,
   type SendDelayNoticeResult,
 } from "@/lib/bookings/change";
 import {
@@ -79,6 +81,12 @@ export async function sendDelayNotice(input: unknown): Promise<SendDelayNoticeRe
 export async function listNeedsReschedule(): Promise<ListNeedsRescheduleResult> {
   await requireRole(["admin"]);
   return listNeedsRescheduleFor();
+}
+
+/** §3.7 `{ bookingId, machineId, startsAt }`: the admin places a booked or in_progress booking; clears its flag. */
+export async function moveBooking(input: unknown): Promise<MoveBookingResult> {
+  const actor = await requireRole(["admin"]);
+  return moveBookingFor(actor, input);
 }
 
 /** A college: its own bookings. An admin: all, or one college's with `{ collegeId }`. Newest first. */
