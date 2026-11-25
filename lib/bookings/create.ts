@@ -1,12 +1,12 @@
-// Booking creation and availability (contracts §2 T1, §3.9, §4). The server actions in lib/actions/bookings.ts
+// Booking creation and availability (contracts §2 T1, §3.9, §4); the input pieces are shared with change.ts. The server actions in lib/actions/bookings.ts
 // run the role guard and call these. Not a "use server" file: nothing here is a public endpoint.
 import "server-only";
-import { eq, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 import { getDb, type Executor } from "@/db";
 import { bookings, colleges } from "@/db/schema";
 import { audit } from "@/lib/auth/audit";
-import { AuthError, collegeScope, type Actor } from "@/lib/auth/guard";
+import { AuthError, collegeScope, ownRows, type Actor } from "@/lib/auth/guard";
 import { availabilityFor, checkAccepted, type Availability } from "@/lib/scheduling/availability";
 import { examDateWarning, formatReference, isFourPartName, normalizePhone } from "@/lib/scheduling/helpers";
 import { bookingData, notifyCollege } from "@/lib/notifications";
@@ -48,35 +48,39 @@ function isCalendarDate(value: string): boolean {
   const at = new Date(Date.UTC(year, month - 1, day));
   return at.getUTCFullYear() === year && at.getUTCMonth() === month - 1 && at.getUTCDate() === day;
 }
-const dateString = z.string().refine(isCalendarDate);
-const job = {
+export const dateString = z.string().refine(isCalendarDate);
+export const jobFields = {
   copies: z.number().int().min(1).max(20_000),
   models: z.number().int().min(1).max(50),
   pagesPerModel: z.number().int().min(1).max(500),
   sides: z.enum(["single", "duplex"]),
 };
-const request = { collegeId: id.optional(), date: dateString, hour: z.number().int().min(0).max(23) };
+export const requestedSlot = { date: dateString, hour: z.number().int().min(0).max(23) };
+const request = { collegeId: id.optional(), ...requestedSlot };
 
-const createBookingInput = z.object({
-  ...job,
-  ...request,
+/** The form fields of `BookingForm` other than the job (contracts §4); `doctorPhone` is normalised after the parse. */
+export const formFields = {
   doctorName: text,
   doctorPhone: z.string().max(40),
   recipientName: text.refine(isFourPartName),
   subject: text,
   serviceType: z.enum(["exam_questions", "results", "quality", "answer_sheets"]),
   examDate: dateString.nullable(),
-  // Only the machine and the start of an accepted suggestion are used; the end is computed on the server.
-  // The bounds keep date arithmetic on it inside the range of Date.
-  accept: z
-    .object({ machineId: id, startsAt: z.date().min(new Date(0)).max(new Date("9999-12-31T00:00:00Z")) })
-    .optional(),
+};
+
+// Only the machine and the start of an accepted suggestion are used; the end is computed on the server.
+// The bounds keep date arithmetic on it inside the range of Date.
+export const acceptInput = z.object({
+  machineId: id,
+  startsAt: z.date().min(new Date(0)).max(new Date("9999-12-31T00:00:00Z")),
 });
 
-// Strict: `bookingId` (availability for an edit) arrives with step 2.3 and must not be silently ignored until then.
-const getAvailabilityInput = z.strictObject({ ...job, ...request });
+const createBookingInput = z.object({ ...jobFields, ...request, ...formFields, accept: acceptInput.optional() });
 
-const VALIDATION = { ok: false, error: "validation" } as const;
+// Strict: an unknown key is a mistake, not something to ignore silently. `bookingId` = availability for an edit.
+const getAvailabilityInput = z.strictObject({ ...jobFields, ...request, bookingId: id.optional() });
+
+export const VALIDATION = { ok: false, error: "validation" } as const;
 
 /**
  * Rules 2–3: the college this request is for. A college user's comes from the session and a `collegeId` in the
@@ -94,7 +98,7 @@ async function isActiveCollege(ex: Executor, collegeId: number): Promise<boolean
   return college?.isActive === true;
 }
 
-function jobOf(v: JobSpec): JobSpec {
+export function jobOf(v: JobSpec): JobSpec {
   return { models: v.models, pagesPerModel: v.pagesPerModel, copies: v.copies, sides: v.sides };
 }
 
@@ -109,23 +113,48 @@ export function isPlacementConflict(error: unknown): boolean {
 
 // ---- getAvailability: writes nothing, takes no lock
 
-/** One consistent snapshot: the answer never mixes rows from before and after another booking's commit. */
-function readAvailability(collegeId: number, spec: JobSpec, date: string, hour: number): Promise<Availability | null> {
+/**
+ * One consistent snapshot: the answer never mixes rows from before and after another booking's commit.
+ * `ignoreBookingId`: the booking being edited, left out of the context (contracts §3).
+ */
+export function readAvailability(
+  collegeId: number,
+  spec: JobSpec,
+  date: string,
+  hour: number,
+  ignoreBookingId?: number,
+): Promise<Availability | null> {
   return getDb().transaction(
     async (tx) => {
       if (!(await isActiveCollege(tx, collegeId))) return null;
-      return availabilityFor(spec, date, hour, await loadContext(tx, { now: new Date(), collegeId }));
+      return availabilityFor(spec, date, hour, await loadContext(tx, { now: new Date(), collegeId, ignoreBookingId }));
     },
     { isolationLevel: "repeatable read", accessMode: "read only" },
   );
 }
 
+/** The college of a `booked` booking the actor may edit (a college: its own only); null = none such. */
+async function editableBookingCollege(actor: Actor, bookingId: number): Promise<number | null> {
+  const [row] = await getDb()
+    .select({ collegeId: bookings.collegeId })
+    .from(bookings)
+    .where(and(eq(bookings.id, bookingId), eq(bookings.status, "booked"), ownRows(actor, bookings.collegeId)));
+  return row?.collegeId ?? null;
+}
+
 export async function getAvailabilityFor(actor: Actor, input: unknown): Promise<GetAvailabilityResult> {
   const parsed = getAvailabilityInput.safeParse(input);
-  const collegeId = requestedCollege(actor, input, parsed.data?.collegeId);
-  if (!parsed.success || collegeId === null) return VALIDATION;
+  let collegeId = requestedCollege(actor, input, parsed.data?.collegeId);
+  if (!parsed.success) return VALIDATION;
   const v = parsed.data;
-  const availability = await readAvailability(collegeId, jobOf(v), v.date, v.hour);
+  if (v.bookingId !== undefined) {
+    // For an edit the college is the booking's; an admin's `collegeId`, when given, must name the same one.
+    const owner = await editableBookingCollege(actor, v.bookingId);
+    if (owner === null || (collegeId !== null && collegeId !== owner)) return VALIDATION;
+    collegeId = owner;
+  }
+  if (collegeId === null) return VALIDATION;
+  const availability = await readAvailability(collegeId, jobOf(v), v.date, v.hour, v.bookingId);
   return availability ? { ok: true, availability } : VALIDATION;
 }
 

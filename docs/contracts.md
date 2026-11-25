@@ -764,12 +764,21 @@ With `accept`, the server uses only `accept.machineId` and `accept.startsAt`; `e
 interface EditBookingInput extends BookingForm { bookingId: number; date: string; hour: number; accept?: Placement }
 type EditBookingResult =
   | { ok: true;  booking: { id: number; reference: string }; examDateWarning: boolean }   // same reference kept
-  | { ok: false; error: 'validation' | 'slot_taken' | 'needs_confirmation' | 'refused' | 'not_editable';
-      availability?: Availability };                                     // 'not_editable' = status or deadline
+  | { ok: false; error: 'validation' | 'not_found' | 'slot_taken' | 'needs_confirmation' | 'refused' | 'not_editable';
+      availability?: Availability };   // 'not_found' = no such booking or not own (rule 2); 'not_editable' = status or deadline
 interface GetAvailabilityInput extends JobSpec { collegeId?: number; date: string; hour: number; bookingId?: number }  // collegeId: admin only; bookingId sets ignoreBookingId, own booking only
 ```
 
 `accept` works for an edit exactly as for `createBooking`.
+
+```ts
+interface CancelBookingInput { bookingId: number; reason?: string }   // blank = none; T6 needs one
+// result: as the other transitions — { ok: true; booking: { id, reference, status } } | { ok: false; error: 'validation' | 'not_found' | 'refused' }
+interface SendDelayNoticeInput { bookingId: number }
+type SendDelayNoticeResult =
+  | { ok: true; booking: { id: number; reference: string; startsAt: Date; endsAt: Date }; moved: boolean }  // moved = false: flagged delay_no_slot
+  | { ok: false; error: 'validation' | 'not_found' | 'refused' | 'slot_taken' };
+```
 
 ## 5. Settings keys
 
@@ -878,3 +887,4 @@ All approved by the owner on 2026-11-25 (1–16 before the Opus 5.5 review, 17�
 18. An `in_progress` job flagged by a stop can still be finished by the operator: `markReady` clears the flag. A flagged job that has not started is moved by the admin before `confirmIdentity`.
 19. `addHoliday` is refused while the date has holding bookings; the admin moves or cancels them first.
 20. The admin does not send delay notices or file Saturday requests; uses `moveBooking` and decides requests instead.
+21. An admin edit sends `booking_rescheduled` only when the start changes, as for an automatic move (7). (Owner, 2026-11-25, step 2.3.)

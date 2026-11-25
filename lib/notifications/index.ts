@@ -36,6 +36,21 @@ export async function notifyCollege(
   await tx.insert(notifications).values(recipients.map((u) => ({ userId: u.id, type, bookingId, data })));
 }
 
+/** "The admins are notified" = one row for each active admin. */
+export async function notifyAdmins(
+  tx: Executor,
+  type: NotificationType,
+  bookingId: number | null,
+  data: object,
+): Promise<void> {
+  const recipients = await tx
+    .select({ id: users.id })
+    .from(users)
+    .where(and(eq(users.role, "admin"), eq(users.isActive, true)));
+  if (recipients.length === 0) return;
+  await tx.insert(notifications).values(recipients.map((u) => ({ userId: u.id, type, bookingId, data })));
+}
+
 // ---- reads (own rows only)
 
 /** The newest rows the bell shows; older ones stay in the table. */

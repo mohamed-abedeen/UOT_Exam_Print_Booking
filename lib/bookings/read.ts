@@ -200,3 +200,53 @@ export async function getWhatsAppLinkFor(actor: Actor, input: unknown): Promise<
   if (row.status !== SHOWN_WHILE[kind]) return { ok: false, error: "refused" };
   return { ok: true, url: whatsAppLink(kind, row) };
 }
+
+// ---- listNeedsReschedule: the admin list (contracts §3.8). Each row is resolved by moveBooking or cancelBooking.
+
+export interface NeedsRescheduleItem {
+  id: number;
+  reference: string;
+  collegeId: number;
+  collegeName: string;
+  machineId: number;
+  machineName: string;
+  startsAt: Date;
+  endsAt: Date;
+  status: BookingStatus;
+  rescheduleReason: "maintenance" | "delay_no_slot" | "machine_change";
+  delayedFrom: Date | null;
+  subject: string;
+  impressions: number;
+}
+
+export type ListNeedsRescheduleResult = { ok: true; bookings: NeedsRescheduleItem[] };
+
+/** Every flagged booking, earliest start first. Admin only (the action's guard). */
+export async function listNeedsRescheduleFor(): Promise<ListNeedsRescheduleResult> {
+  const rows = await getDb()
+    .select({
+      id: bookings.id,
+      reference: bookings.reference,
+      collegeId: bookings.collegeId,
+      collegeName: colleges.name,
+      machineId: bookings.machineId,
+      machineName: machines.name,
+      startsAt: bookings.startsAt,
+      endsAt: bookings.endsAt,
+      status: bookings.status,
+      rescheduleReason: bookings.rescheduleReason,
+      delayedFrom: bookings.delayedFrom,
+      subject: bookings.subject,
+      impressions: bookings.impressions,
+    })
+    .from(bookings)
+    .innerJoin(colleges, eq(colleges.id, bookings.collegeId))
+    .innerJoin(machines, eq(machines.id, bookings.machineId))
+    .where(eq(bookings.needsReschedule, true))
+    .orderBy(bookings.startsAt, bookings.id);
+  // CHECK (needs_reschedule = (reschedule_reason IS NOT NULL)): a flagged row always has its reason.
+  return {
+    ok: true,
+    bookings: rows.map((r) => ({ ...r, rescheduleReason: r.rescheduleReason!, impressions: r.impressions! })),
+  };
+}

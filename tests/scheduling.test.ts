@@ -8,6 +8,7 @@ import {
   freeStarts,
   isFreeOn,
   isStaticEligible,
+  latestFreeStart,
   maxCopiesInOneDay,
   nearestFreeStart,
   placeInHour,
@@ -671,5 +672,43 @@ describe("a job longer than the day (§3.6)", () => {
     expect(placeInHour(half, SUNDAY, 9, after)).toBe("hour_full");
     expect(nearestFreeStart(half, SUNDAY, 9, after)).toEqual(placed(4, MONDAY, "09:00", "14:20"));
     expect(placeInHour(half, MONDAY, 9, after)).toEqual(placed(4, MONDAY, "09:00", "14:20"));
+  });
+});
+
+describe("latestFreeStart (§3.7, step 2.3)", () => {
+  // The contract's delay example: 1 × 2 × 150 single (300 impressions) on M1 11:00–11:20, notice at 09:45.
+  const booking = { id: 50, ...job(1, 2, 150), startsAt: t(SUNDAY, "11:00") };
+  const own = busy(1, SUNDAY, "11:00", "11:20", 50);
+
+  it("example: latest is 14:50 on M2 and M4; M2 wins the tie (tier group 401 before 801)", () => {
+    const ctx = makeCtx({ now: t(SUNDAY, "09:45"), busy: [busy(1, SUNDAY, "14:00", "15:00")], ignoreBookingId: 50 });
+    expect(latestFreeStart(booking, ctx)).toEqual(placed(2, SUNDAY, "14:50", "15:00"));
+  });
+
+  it("takes a larger machine when only it has the latest start", () => {
+    const ctx = makeCtx({
+      now: t(SUNDAY, "09:45"),
+      busy: [busy(1, SUNDAY, "14:00", "15:00"), busy(2, SUNDAY, "14:00", "15:00"), busy(4, SUNDAY, "14:50", "15:00")],
+      ignoreBookingId: 50,
+    });
+    expect(latestFreeStart(booking, ctx)).toEqual(placed(3, SUNDAY, "14:40", "15:00"));
+  });
+
+  it("only starts after the booking's own start count; none → null", () => {
+    const afternoon = [1, 2, 3, 4].map((id) => busy(id, SUNDAY, "11:10", "15:00"));
+    const ctx = makeCtx({ now: t(SUNDAY, "09:45"), busy: [own, ...afternoon], ignoreBookingId: 50 });
+    // 11:00 itself is free once the booking is ignored, but it is not later than its start.
+    expect(latestFreeStart(booking, ctx)).toBeNull();
+  });
+
+  it("the booking's own interval is not busy for itself; the same date only", () => {
+    const allDayButOwn = [2, 3, 4].map((id) => busy(id, SUNDAY, "09:00", "15:00"));
+    const ctx = makeCtx({
+      now: t(SUNDAY, "09:45"),
+      busy: [own, busy(1, SUNDAY, "11:30", "15:00"), ...allDayButOwn],
+      ignoreBookingId: 50,
+    });
+    // M1 is free 11:00–11:30 only (its own slot ignored): 11:10 is the latest start after 11:00. Monday is never tried.
+    expect(latestFreeStart(booking, ctx)).toEqual(placed(1, SUNDAY, "11:10", "11:30"));
   });
 });

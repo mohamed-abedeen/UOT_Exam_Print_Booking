@@ -1,4 +1,4 @@
-// Scheduling core (contracts §3.1–3.6): pure functions. Everything comes in through `ctx`;
+// Scheduling core (contracts §3.1–3.7): pure functions. Everything comes in through `ctx`;
 // nothing here reads the clock or the database.
 import { addDays, addMinutes, atMinutes, ceilToGrid, localDate, minutesOfDay, SLOT_MINUTES, weekdayOf } from "./time";
 import type { JobSpec, Machine, Placement, Quantities, Refusal, ScheduleContext, Window } from "./types";
@@ -195,6 +195,26 @@ export function nearestFreeStart(job: JobSpec, date: string, hour: number, ctx: 
     if (best) return placement(job, best.m, best.start);
   }
   return "no_free_slot";
+}
+
+// ---- §3.7 Delay notice
+
+/**
+ * The latest free start after the booking's own start, same date, on any static-eligible machine (a larger one too).
+ * `ctx` must be loaded with `ignoreBookingId` = this booking. Ties at the same start go to the first machine in
+ * (tierGroup, priority, loadMinutes, id) order. Null = no free start later that day.
+ */
+export function latestFreeStart(booking: JobSpec & { startsAt: Date }, ctx: ScheduleContext): Placement | null {
+  const date = localDate(booking.startsAt);
+  const after = booking.startsAt.getTime();
+  let best: { m: Machine; start: Date } | null = null;
+  for (const m of eligibleMachines(booking, date, ctx)) {
+    const starts = freeStarts(booking, m, date, ctx);
+    const latest = starts.length > 0 ? starts[starts.length - 1] : undefined;
+    if (!latest || latest.getTime() <= after) continue;
+    if (!best || latest.getTime() > best.start.getTime()) best = { m, start: latest };
+  }
+  return best ? placement(booking, best.m, best.start) : null;
 }
 
 // ---- §3.6 A job longer than the day
