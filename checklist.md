@@ -16,11 +16,11 @@ Rules and decisions: [plan.md](plan.md).
 
 ## Phase 0 — Foundation
 
-- [ ] **0.1 Contracts** — Fable 5.2 (high) · review: Opus 5.5
+- [x] **0.1 Contracts** — Fable 5.2 (high) · review: Opus 5.5
   Requires: none.
   Write `docs/contracts.md`: exact tables and columns, booking state transitions, scheduling algorithm with worked examples, permission matrix per action, settings keys.
   Done when: every rule in plan.md §4 maps to a table, a transition or a function signature.
-  Note 2026-11-25: [docs/contracts.md](docs/contracts.md) written by Fable 5.2 (rule map in its §7). **Opus 5.5 review still owed** — the box stays unticked until it passes; the review also rules on the 16 choices in its §8.
+  Note 2026-11-25: [docs/contracts.md](docs/contracts.md) written by Fable 5.2 (rule map in its §7). Opus 5.5 review done ("pass after fixes", 0 blocker / 15 should-fix / 8 nit). Fixes applied and re-check passed (3 nits 24–26 applied after it). The fixes were written and re-checked by Opus 5.5 (session switched models), so a Fable 5.2 look at them is still possible but was not required by the owner. The 20 choices in its §8 were approved by the owner on 2026-11-25.
 - [x] **0.2 Scaffold** — Sonnet 5.5
   Requires: none.
   Next.js + TypeScript + Tailwind RTL shell (Arabic font, layout per role), Drizzle, Postgres in Docker Compose, Vitest, lint, `.env.example`, `git init`.
@@ -30,10 +30,11 @@ Rules and decisions: [plan.md](plan.md).
 
 Login → admin adds a machine → college books → operator sees the queue.
 
-- [ ] **1.1 Schema v1 + seed** — Opus 5.5
+- [x] **1.1 Schema v1 + seed** — Opus 5.5
   Requires: 0.1, 0.2.
   Migrations for `colleges`, `users`, `sessions`, `machines`, `bookings` (exclusion constraint on machine + interval), `settings`, `holidays`, `audit_log`. Seed: the 7 machines, one admin, two test colleges, one operator.
   Done when: migrations apply on an empty DB and the seed loads.
+  Note 2026-11-25 (Opus 5.5): built; ticked by the owner before review, which is in 1.8. Owner choices: `machine_maintenance` added now (its exclusion constraint is tested here); seeded accounts use `SEED_PASSWORD` from `.env`; hashing with `@node-rs/argon2` (1.2 reuses it); 650i seeded as 401–800. Schema checked against the contract SQL: only diffs are `created_at` columns and `ON DELETE RESTRICT` (both from §0). Speeds and setup times are placeholders; all priorities 100.
 - [ ] **1.2 Login and permissions** — Fable 5.2 (high) · review: Opus 5.5
   Requires: 1.1.
   Password hashing, DB sessions, role guard used by every server action, login rate limit, admin creates accounts and resets passwords, `audit()` helper.
