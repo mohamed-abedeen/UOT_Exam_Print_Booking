@@ -158,9 +158,7 @@ CREATE TABLE bookings (
   -- reference
   ref_year         integer  NOT NULL,                 -- year of creation
   ref_seq          integer  NOT NULL CHECK (ref_seq >= 1),
-  part_no          smallint NOT NULL DEFAULT 1,
-  part_count       smallint NOT NULL DEFAULT 1,
-  reference        text     NOT NULL UNIQUE,          -- 'YYYY-NNNN', or 'YYYY-NNNN-P' when part_count > 1
+  reference        text     NOT NULL UNIQUE,          -- 'YYYY-NNNN'
 
   -- who
   college_id       bigint  NOT NULL REFERENCES colleges(id),
@@ -213,7 +211,6 @@ CREATE TABLE bookings (
   updated_at       timestamptz NOT NULL DEFAULT now(),
 
   CHECK (ends_at > starts_at),
-  CHECK (part_no BETWEEN 1 AND part_count),
   CHECK (needs_reschedule = (reschedule_reason IS NOT NULL)),
   CHECK (NOT needs_reschedule OR status IN ('booked', 'in_progress')),
   CHECK (status NOT IN ('in_progress', 'ready', 'delivered') OR identity_confirmed_at IS NOT NULL),
@@ -222,16 +219,11 @@ CREATE TABLE bookings (
   CHECK (status <> 'delivered' OR delivered_at IS NOT NULL),
   CHECK (status <> 'cancelled' OR cancelled_at IS NOT NULL),
   CHECK (status <> 'no_show'   OR no_show_at   IS NOT NULL),
-  UNIQUE (ref_year, ref_seq, part_no),
+  UNIQUE (ref_year, ref_seq),
 
   -- two bookings never overlap on one machine
   CONSTRAINT bookings_no_overlap
     EXCLUDE USING gist (machine_id WITH =, tstzrange(starts_at, ends_at, '[)') WITH &&)
-    WHERE (status NOT IN ('cancelled', 'no_show')),
-
-  -- parts of one split request never overlap in time (one original)
-  CONSTRAINT bookings_parts_no_overlap
-    EXCLUDE USING gist (ref_year WITH =, ref_seq WITH =, tstzrange(starts_at, ends_at, '[)') WITH &&)
     WHERE (status NOT IN ('cancelled', 'no_show'))
 );
 CREATE INDEX bookings_day_machine_idx ON bookings (work_date, machine_id, starts_at);
@@ -240,7 +232,7 @@ CREATE INDEX bookings_status_idx      ON bookings (status, work_date);
 CREATE INDEX bookings_reschedule_idx  ON bookings (starts_at) WHERE needs_reschedule;
 ```
 
-- Cancelling or marking no-show releases the interval because the row leaves both exclusion constraints.
+- Cancelling or marking no-show releases the interval because the row leaves the exclusion constraint.
 - `needs_reschedule` is a flag on a `booked` / `in_progress` row, not a status. A flagged row keeps its machine and interval until it is moved.
 - The interval lies inside one working window (same `work_date`, between `work_start` and `work_end`); checked by the scheduler, not by the DB.
 - Booking vs maintenance overlap spans two tables and is enforced by the scheduling lock (§3.9), not by a constraint.
@@ -371,7 +363,7 @@ Append-only; no `created_at` (it is `at`).
 
 | # | From → to | Action | Who | Guards | Writes |
 |---|---|---|---|---|---|
-| T1 | (none) → `booked` | `createBooking` | college (own), admin (on behalf) | form valid; placement found (§3) | booking row(s), reference; admin: `on_behalf = true`, audit, `booking_on_behalf` to the college |
+| T1 | (none) → `booked` | `createBooking` | college (own), admin (on behalf) | form valid; placement found (§3) | booking row, reference; admin: `on_behalf = true`, audit, `booking_on_behalf` to the college |
 | T2 | `booked` → `in_progress` | `confirmIdentity` | operator, admin | `work_date` = today; `needs_reschedule = false` | `identity_confirmed_by`, `identity_confirmed_at`; audit |
 | T3 | `in_progress` → `ready` | `markReady` | operator, admin | `wasted_sheets ≥ 0` given; `waste_destroyed = true`; `needs_reschedule = false` | `wasted_sheets`, `waste_destroyed`, `ready_by`, `ready_at`; paper movement `consume −sheets`; if wasted > 0, paper movement `waste −wasted_sheets`; `impressions_used += impressions` on every installed part of the machine; `booking_ready` to the college |
 | T4 | `ready` → `delivered` | `markDelivered` | operator, admin | — | `delivered_by`, `delivered_at` |
@@ -400,7 +392,6 @@ interface Machine    { id: number; minSheets: number; maxSheets: number | null; 
 interface Window     { open: Date; close: Date }                  // one working day
 interface Busy       { machineId: number; start: Date; end: Date | null; bookingId?: number }  // holding bookings and maintenance rows
 interface Placement  { machineId: number; startsAt: Date; endsAt: Date }
-interface PartPlan extends Placement { partNo: number; copies: number; impressions: number; sheets: number }
 
 interface ScheduleContext {
   now: Date;
@@ -538,37 +529,29 @@ Example B — a full hour. Same job and same M1, but M2, M3 and M4 are busy 09:0
 
 Example C — closed day. The coordinator asks for Friday (not a working weekday): `day_closed`, suggestion = the nearest start to that hour on the next open day.
 
-### 3.6 A job longer than the day (automatic split, plan §6.2)
+### 3.6 A job longer than the day (manual split, plan §6.2)
 
 ```ts
-function planSplit(job: JobSpec, ctx: ScheduleContext): JobSpec[] | null | 'no_machine' | 'too_long'
-// E = static-eligible machines for the whole job; empty → 'no_machine'
+function maxCopiesInOneDay(job: JobSpec, ctx: ScheduleContext): number
+// E = machines static-eligible for the job as entered (never empty here: 'no_machine' is answered first)
 // dayMinutes = work_end − work_start
-// null (no split) when some m in E has durationMinutes(job, m) <= dayMinutes
-// otherwise, per machine in E:
-//   maxCopies(m) = floor((dayMinutes − models × setup_m) × speed_m ÷ (60 × models × pagesPerModel))
-// best = largest maxCopies; best < 1 → 'too_long'
-// N = ceil(copies ÷ best); parts = N copies of the job with `copies` spread evenly
-//   (the first `copies mod N` parts get one more copy)
-
-function placeParts(parts: JobSpec[], date: string, hour: number, ctx: ScheduleContext): PartPlan[] | Refusal
-// part 1: placeInHour(date, hour), else nearestFreeStart(date, hour)
-// part k > 1: earliest free start >= end of part k−1, on the same date then on later open dates
-//   (limit suggestion_search_days); winner: smallest (s, tierGroup, priority, loadMinutes, id)
-// each part is placed by its own impressions (tier, large-job rule, Saturday quota on its own day)
-// earlier parts of the same plan count as busy; any part without a place → the whole plan is refused
+// result = the largest, over E, of
+//   floor((dayMinutes − models × setup_m) × speed_m ÷ (60 × models × pagesPerModel)), never below 0
+// i.e. the most copies the fastest eligible machine finishes in one full working day
 ```
 
-A split plan is always shown to the coordinator and booked only when accepted. All parts are inserted in one transaction with the same `ref_year`, `ref_seq`, `part_count = N` and `part_no = 1…N`; all form fields are copied to every part, `copies` differs.
+A booking is one interval on one machine inside one working day, and the system never splits a job. A job is too long when `job.copies > maxCopiesInOneDay(job, ctx)`, which is the same as "no eligible machine has `durationMinutes(job, m) <= dayMinutes`". `placeInHour` and `nearestFreeStart` check this first and answer `too_long`: no suggestion is searched, nothing is written. `getAvailability` and `createBooking` pass on `too_long` with `maxCopies`, and the form shows:
 
-Example. 6 models × 8 pages × 1,200 copies, duplex = 57,600 impressions. Only M4 is eligible (duplex, 801+): 6 × 5 + 57,600 ÷ 6,000 × 60 = 606 → 610 minutes > 360 → split. `maxCopies(M4)` = floor((360 − 30) × 6,000 ÷ (60 × 48)) = floor(687.5) = 687. N = ceil(1,200 ÷ 687) = 2 → 600 + 600 copies. Each part: 28,800 impressions, 14,400 sheets, 30 + 288 = 318 → 320 minutes. Requested Sunday hour 9, M4 empty:
+> هذا العمل لا يكفيه يوم دوام واحد على أي آلة مناسبة. أقصى عدد نسخ في حجز واحد: {maxCopies}. قسّم العمل إلى عدة حجوزات.
 
-| Part | Reference | Machine | Interval | Large-job slot |
+The coordinator then books the job as several separate bookings. Each one stands alone: its own reference `YYYY-NNNN`, form, identity confirmation and hand-over; there are no part numbers and nothing links the bookings in the database. A result of 0 means even one copy of all the models does not fit in a day: the coordinator books fewer models per booking.
+
+Example. 6 models × 8 pages × 1,200 copies, duplex = 57,600 impressions. Only M4 is eligible (duplex, 801+): 6 × 5 + 57,600 ÷ 6,000 × 60 = 606 → 610 minutes > 360. `maxCopiesInOneDay` = floor((360 − 30) × 6,000 ÷ (60 × 48)) = floor(687.5) = 687; 1,200 > 687 → `too_long`, the form shows 687. The coordinator books two jobs of 600 copies (28,800 impressions, 14,400 sheets, 30 + 288 = 318 → 320 minutes each):
+
+| Booking | Reference | Machine | Interval | Large-job slot |
 |---|---|---|---|---|
-| 1 | `2026-0042-1` | M4 | Sunday 09:00–14:20 | one of Sunday's two |
-| 2 | `2026-0042-2` | M4 | Monday 09:00–14:20 (Sunday has only 40 minutes left) | one of Monday's two |
-
-After booking, each part is an ordinary booking: its own T2–T7, delay notice, time change and cancellation. `copies`, `models`, `pages_per_model` and `sides` of a part cannot be edited (`part_count > 1`).
+| 600 copies, Sunday hour 9 | `2026-0042` | M4 | Sunday 09:00–14:20 | one of Sunday's two |
+| 600 copies, Monday hour 9 | `2026-0043` | M4 | Monday 09:00–14:20 (M4 has only 40 minutes left on Sunday) | one of Monday's two |
 
 ### 3.7 Edit, delay notice, manual move
 
@@ -618,7 +601,7 @@ If the admin reactivates M2 at 10:40, B2 (11:00, still on M2, no overlap left) i
 
 - Every transaction that creates a booking, changes a booking's `machine_id` / `starts_at` / `ends_at`, or writes `machine_maintenance` starts with `SELECT pg_advisory_xact_lock(7001)` (one scheduling lock for the whole centre), then loads `ctx`, decides and writes. This makes free-interval search, the large-job count, the Saturday quota, the reference number and the booking-vs-maintenance rule atomic.
 - `bookings_no_overlap` stays the final authority. On SQLSTATE `23P01`, `40001` or `40P01` the transaction is retried from the start, at most 3 times; then the action returns `slot_taken` with a fresh suggestion.
-- Reference number, under the same lock: `ref_seq = coalesce(max(ref_seq), 0) + 1` for `ref_year` = current year; `UNIQUE (ref_year, ref_seq, part_no)` is the backstop.
+- Reference number, under the same lock: `ref_seq = coalesce(max(ref_seq), 0) + 1` for `ref_year` = current year; `UNIQUE (ref_year, ref_seq)` is the backstop.
 - State transitions (§2) do not take the lock; they rely on `WHERE status = $from`.
 
 ### 3.10 Small helpers
@@ -633,8 +616,8 @@ function isFourPartName(name: string): boolean        // at least four words of 
 function examDateWarning(bookingDate: string, examDate: string | null): boolean
 // true when examDate is set and bookingDate >= examDate; a warning only, it never blocks
 
-function formatReference(year: number, seq: number, partNo: number, partCount: number): string
-// '2026-0042' when partCount = 1, '2026-0042-2' otherwise; seq is zero-padded to 4 and grows past 9999
+function formatReference(year: number, seq: number): string
+// '2026-0042'; seq is zero-padded to 4 and grows past 9999
 
 function whatsAppLink(kind: 'started' | 'ready', b: Booking): string
 // `https://wa.me/${b.doctorPhone}?text=${encodeURIComponent(text)}`
@@ -673,7 +656,7 @@ Rules for every action:
 | `startMaintenance`, `endMaintenance`, `listMaintenance` | — | — | ✓ | §3.8 |
 | `listNeedsReschedule`, `moveBooking` | — | — | ✓ | §3.7, §3.8 |
 | **Bookings** | | | | |
-| `getAvailability` | own | — | ✓ | returns exact placement, suggestion or split plan; writes nothing |
+| `getAvailability` | own | — | ✓ | returns an exact placement, a suggestion or a refusal; writes nothing |
 | `createBooking` | own | — | ✓ | T1; admin = on behalf |
 | `getBooking` | own | ✓ | ✓ | |
 | `listBookings` | own | — | ✓ | |
@@ -718,19 +701,18 @@ interface BookingForm { doctorName: string; doctorPhone: string; recipientName: 
 interface CreateBookingInput extends BookingForm {
   collegeId?: number;                    // admin only
   date: string; hour: number;            // what the coordinator picked
-  accept?: PartPlan[];                   // a suggestion or split plan returned earlier, now accepted
+  accept?: Placement;                    // a suggestion returned earlier, now accepted
 }
 type Availability =
-  | { kind: 'exact';      parts: [PartPlan] }
-  | { kind: 'suggestion'; parts: [PartPlan]; reason: Refusal }
-  | { kind: 'split';      parts: PartPlan[] }
-  | { kind: 'none';       reason: Refusal };
+  | { kind: 'exact';      placement: Placement }
+  | { kind: 'suggestion'; placement: Placement; reason: Refusal }
+  | { kind: 'none';       reason: Refusal; maxCopies?: number };   // maxCopies comes with 'too_long'
 type CreateBookingResult =
-  | { ok: true;  bookings: { id: number; reference: string }[]; examDateWarning: boolean }
-  | { ok: false; error: 'validation' | 'slot_taken' | 'needs_confirmation'; availability?: Availability };
+  | { ok: true;  booking: { id: number; reference: string }; examDateWarning: boolean }
+  | { ok: false; error: 'validation' | 'slot_taken' | 'needs_confirmation' | 'refused'; availability?: Availability };
 ```
 
-Without `accept`, a booking is written only when availability is `exact`; otherwise nothing is written and the result is `needs_confirmation` with the suggestion or plan. With `accept`, every part is checked again at exactly that machine and start; if any part is no longer free, nothing is written and the result is `slot_taken` with fresh availability.
+Without `accept`, a booking is written only when availability is `exact`. A `suggestion` writes nothing and returns `needs_confirmation`; `none` writes nothing and returns `refused`. With `accept`, the placement is checked again at exactly that machine and start; if it is no longer free, nothing is written and the result is `slot_taken` with fresh availability.
 
 ## 5. Settings keys
 
@@ -745,7 +727,7 @@ Rows of `settings`; `value` is JSON. Seeded with the defaults.
 | `large_jobs_per_day` | `2` | large jobs allowed per day, all machines and colleges together | integer ≥ 0 |
 | `edit_deadline_minutes` | `60` | a college may edit or cancel until this long before the start | integer ≥ 0 |
 | `delay_deadline_minutes` | `60` | a delay notice is accepted until this long before the start | integer ≥ 0 |
-| `suggestion_search_days` | `14` | how many days ahead the nearest-start and split searches look | integer 1–60 |
+| `suggestion_search_days` | `14` | how many days ahead the nearest-start search looks | integer 1–60 |
 | `part_warn_percent` | `90` | a part alerts when its counter reaches this share of its life | integer 1–100 |
 
 Holidays live in `holidays`. Changing hours or weekdays never moves existing bookings. Constants that are not settings: time zone, `SLOT_MINUTES = 10`, one delay notice per booking, scheduling lock key `7001`, 3 retries.
@@ -788,7 +770,7 @@ Audited actions (`audit_log.action`), written by the `audit()` helper inside the
 | Working hours, weekdays, holidays | `workingWindow` (§3.4), settings (§5), `holidays` |
 | Large jobs: at most 2 a day above 6,000 | `dayRefusal` (§3.4), `large_job_threshold`, `large_jobs_per_day` |
 | Saturday request and approval, per college, up to a quantity | `saturday_requests` (§1.8), `workingWindow`, `dayRefusal`, `createSaturdayRequest`, `decideSaturdayRequest` |
-| Job longer than a day is split (plan §6.2) | `planSplit`, `placeParts` (§3.6), `part_no`, `part_count`, `bookings_parts_no_overlap` |
+| A job must fit in one working day; a bigger one is split by the coordinator (plan §6.2) | `maxCopiesInOneDay`, refusal `too_long` with `maxCopies` (§3.6) |
 | Edit or cancel until 60 minutes before; then admin only | `editBooking` (§3.7), T5, `edit_deadline_minutes` |
 | Delay notice, once, latest free interval, else admin | `sendDelayNotice`, `latestFreeStart` (§3.7), `delay_notice_at`, `delayed_from` |
 | No-show releases the time, notifies, counts in reports | T7, exclusion predicate, `booking_no_show`, `reportByCollege` |
@@ -832,6 +814,4 @@ To be confirmed by the owner or overturned at the Opus 5.5 review.
 13. Archiving a machine or removing a capability reassigns its future bookings like a maintenance stop.
 14. One scheduling lock for the whole centre instead of per-machine locks.
 15. Operators do not see stock. WhatsApp goes to the doctor's phone (the only phone on the form).
-16. Split: the number of parts is computed on the fastest machine eligible for the whole job; each part is then placed by its own `impressions`.
-17. Default working weekdays are Sunday–Thursday until the owner gives the real ones.
-18. A split job is cancelled part by part (`cancelBooking` per part); there is no group action.
+16. Default working weekdays are Sunday–Thursday until the owner gives the real ones.

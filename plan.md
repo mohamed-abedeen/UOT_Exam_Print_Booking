@@ -94,13 +94,11 @@ Exact columns, state transitions and the permission matrix are written in `docs/
 ## 6. Confirmed assumptions (owner, 2026-11-25)
 
 1. **Confirmed.** Tiers and the 6,000 rule count `impressions` (the PDF's "total sheets" formula), not physical sheets.
-2. **Changed.** A booking is still one interval on one machine inside one working day, but a job that no eligible machine can finish in one full working day is **split by the system**, not by the coordinator:
-   - Parts follow each other and are split by copies: every part has all the models with fewer copies, parts nearly equal. They never overlap in time (one original).
-   - Part 1 goes at the chosen day and hour; each later part at the nearest free start after the previous part ends (same day or the next working day).
-   - Each part is a full booking of its own: reference `YYYY-NNNN-P` (one number for the request, `P` = part), its own identity confirmation, ready and hand-over. The original never stays at the centre between parts.
-   - The large-job rule counts each part on its own day by the part's own `impressions`.
-   - On a split job the college may change the time of a part, send a delay notice for it or cancel it. Quantities and sides cannot be edited: cancel the parts not yet started and book again.
-3. **Confirmed.** One delay notice per booking (per part on a split job).
+2. **Confirmed (manual).** The system never splits a job; the coordinator does.
+   - A booking is one interval on one machine inside one working day.
+   - If no eligible machine can finish the job within one full working day, the booking is refused with a clear Arabic message, and the form shows the largest number of copies that fits in one day on the fastest eligible machine, so the coordinator can book the job as several separate bookings.
+   - Each booking stands alone: its own reference `YYYY-NNNN`, no part numbers, no link between bookings.
+3. **Confirmed.** One delay notice per booking.
 4. **Confirmed.** Durations round up to 10 minutes; starts are on the 10-minute grid.
 5. **Confirmed.** The same person hands in the original and collects the copies.
 

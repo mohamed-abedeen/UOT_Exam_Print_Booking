@@ -20,7 +20,7 @@ Rules and decisions: [plan.md](plan.md).
   Requires: none.
   Write `docs/contracts.md`: exact tables and columns, booking state transitions, scheduling algorithm with worked examples, permission matrix per action, settings keys.
   Done when: every rule in plan.md §4 maps to a table, a transition or a function signature.
-  Note 2026-11-25: [docs/contracts.md](docs/contracts.md) written by Fable 5.2 (rule map in its §7). **Opus 5.5 review still owed** — the box stays unticked until it passes; the review also rules on the 18 choices in its §8.
+  Note 2026-11-25: [docs/contracts.md](docs/contracts.md) written by Fable 5.2 (rule map in its §7). **Opus 5.5 review still owed** — the box stays unticked until it passes; the review also rules on the 16 choices in its §8.
 - [x] **0.2 Scaffold** — Sonnet 5.5
   Requires: none.
   Next.js + TypeScript + Tailwind RTL shell (Arabic font, layout per role), Drizzle, Postgres in Docker Compose, Vitest, lint, `.env.example`, `git init`.
