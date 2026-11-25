@@ -90,6 +90,16 @@ CREATE INDEX sessions_expires_idx ON sessions (expires_at);
 
 Session lifetime, cookie flags and the login rate limit are fixed in step 1.2; the columns above are all it may use. Deactivating a user or resetting a password deletes that user's sessions.
 
+Fixed in step 1.2 (owner, 2026-11-25):
+
+- **Lifetime:** a session ends after 8 hours without activity (each request moves `expires_at` to now + 8 h, written at most once a minute) and at most 7 days after login (`created_at` + 7 d).
+- **Cookie:** `uot_session`, a random 32-byte token; `HttpOnly`, `SameSite=Lax`, `Secure` in production, `Path=/`.
+- **Rate limit:** 5 wrong passwords in a row set `locked_until` = now + 15 min (`auth.lockout`). A correct password, or a lock that has run out, restarts the count. A wrong current password in `changeOwnPassword` counts the same way; the 5th there also deletes all of the user's sessions. While locked nothing is counted or audited. No per-IP limit.
+- **Answers:** `login` gives one answer (`invalid`) for an unknown user, a wrong password, a locked and an inactive account. A wrong password for an unknown username is not audited (the log cannot be flooded); the answer time for a known username differs by a few DB round trips (accepted).
+- **Passwords:** argon2id (`@node-rs/argon2` defaults); 10–128 characters, no other rule. `createUser` and `resetUserPassword` make a 12-character temporary password on the server and return it once. While `must_change_password` is set, only `changeOwnPassword` and `logout` are open. `changeOwnPassword` deletes the user's other sessions.
+- **Accounts:** `updateUser` changes `username` (3–32 of `a-z A-Z 0-9 . _ -`) and `full_name` only; role and college are fixed at creation. An admin cannot deactivate or reset their own account. An account of an inactive college cannot be created or reactivated.
+- **Guard:** `requireRole(roles)` in `lib/auth/guard.ts` — no session → `/login`, temporary password → `/change-password`, wrong role → `AuthError`. `collegeScope(actor, collegeId?)` and `ownRows(actor, column)` carry rules 2–3 of §4. `audit(tx, who, entry)` is in `lib/auth/audit.ts`. Audit `ip` is the last `X-Forwarded-For` entry (the one our proxy appends).
+
 ### 1.4 `machines`
 
 ```sql
