@@ -701,7 +701,8 @@ Rules for every action:
 | `getAvailability` | own | — | ✓ | returns an exact placement, a suggestion or a refusal; writes nothing; `bookingId` (own booking) for an edit |
 | `createBooking` | own | — | ✓ | T1; admin = on behalf |
 | `getBooking` | own | ✓ | ✓ | |
-| `listBookings` | own | — | ✓ | |
+| `listBookings` | own | — | ✓ | admin may pass `collegeId`; newest `starts_at` first; no machine in a row (step 1.6) |
+| `getBookingFormConfig` | ✓ | — | ✓ | `work_start`, `work_end`, `working_weekdays` and today's business date, for the booking form; a college cannot read the settings (step 1.6) |
 | `getDayQueue(date)` | — | ✓ | ✓ | by time and machine |
 | `editBooking` | own | — | ✓ | §3.7; college until the deadline |
 | `cancelBooking` | own | — | ✓ | T5, T6 |

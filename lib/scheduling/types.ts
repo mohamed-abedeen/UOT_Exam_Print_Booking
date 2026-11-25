@@ -1,6 +1,8 @@
 // Scheduling types (contracts §3). Only what the pure functions of step 1.3 use.
 
 export type Sides = "single" | "duplex";
+export type ServiceType = "exam_questions" | "results" | "quality" | "answer_sheets";
+export type BookingStatus = "booked" | "in_progress" | "ready" | "delivered" | "cancelled" | "no_show";
 
 export interface JobSpec {
   models: number;
