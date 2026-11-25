@@ -1,5 +1,5 @@
 // Small pure helpers (contracts §3.10) used by the booking form and createBooking.
-// whatsAppLink and getStockAlerts arrive with the steps that use them.
+// getStockAlerts arrives with the stock step (3.1).
 
 /** A Libyan mobile number as '2189XXXXXXXX', or null when it is not one. */
 export function normalizePhone(input: string): string | null {
@@ -25,4 +25,19 @@ export function examDateWarning(bookingDate: string, examDate: string | null): b
 /** '2026-0042'; the sequence is zero-padded to 4 and grows past 9999. */
 export function formatReference(year: number, seq: number): string {
   return `${year}-${String(seq).padStart(4, "0")}`;
+}
+
+export type WhatsAppKind = "started" | "ready";
+
+/** The wa.me link to the doctor's phone with the fixed Arabic text of contracts §3.10. Writes nothing. */
+export function whatsAppLink(
+  kind: WhatsAppKind,
+  b: { doctorPhone: string; subject: string; collegeName: string; machineName: string; reference: string },
+): string {
+  const head = "مركز التصوير والطباعة – جامعة طرابلس: ";
+  const text =
+    kind === "started"
+      ? `${head}بدأ تصوير «${b.subject}» (${b.collegeName}) على الآلة ${b.machineName}. المرجع ${b.reference}.`
+      : `${head}«${b.subject}» (${b.collegeName}) جاهز للاستلام. المرجع ${b.reference}.`;
+  return `https://wa.me/${b.doctorPhone}?text=${encodeURIComponent(text)}`;
 }
