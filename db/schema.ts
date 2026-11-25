@@ -41,6 +41,7 @@ export const bookingStatus = pgEnum("booking_status", [
   "no_show",
 ]);
 export const rescheduleReason = pgEnum("reschedule_reason", ["maintenance", "delay_no_slot", "machine_change"]);
+export const saturdayStatus = pgEnum("saturday_status", ["pending", "approved", "rejected"]);
 export const notificationType = pgEnum("notification_type", [
   "booking_ready",
   "booking_no_show",
@@ -310,7 +311,52 @@ export const bookings = pgTable(
   ],
 );
 
-// ---- 1.11 notifications (step 2.1). `saturday_request_id` arrives with `saturday_requests` (step 2.6).
+// ---- 1.8 saturday_requests (step 2.6). Quantities are impressions.
+
+export const saturdayRequests = pgTable(
+  "saturday_requests",
+  {
+    id: id(),
+    collegeId: ref("college_id").notNull(),
+    date: date("date", { mode: "string" }).notNull(),
+    expectedQuantity: integer("expected_quantity").notNull(),
+    reason: text("reason").notNull(),
+    status: saturdayStatus("status").notNull().default("pending"),
+    approvedQuantity: integer("approved_quantity"),
+    decidedBy: ref("decided_by"),
+    decidedAt: tstz("decided_at"),
+    decisionNote: text("decision_note"),
+    createdBy: ref("created_by").notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    foreignKey({
+      name: "saturday_requests_college_id_fkey",
+      columns: [t.collegeId],
+      foreignColumns: [colleges.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "saturday_requests_decided_by_fkey",
+      columns: [t.decidedBy],
+      foreignColumns: [users.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "saturday_requests_created_by_fkey",
+      columns: [t.createdBy],
+      foreignColumns: [users.id],
+    }).onDelete("restrict"),
+    check("saturday_requests_date_check", sql`extract(isodow FROM ${t.date}) = 6`), // a Saturday
+    check("saturday_requests_expected_quantity_check", sql`${t.expectedQuantity} > 0`),
+    check("saturday_requests_approved_quantity_check", sql`${t.approvedQuantity} > 0`),
+    check("saturday_requests_check", sql`(${t.status} = 'approved') = (${t.approvedQuantity} IS NOT NULL)`),
+    check("saturday_requests_check1", sql`(${t.status} = 'pending') = (${t.decidedAt} IS NULL)`),
+    uniqueIndex("saturday_one_open_idx")
+      .on(t.collegeId, t.date)
+      .where(sql`${t.status} IN ('pending', 'approved')`),
+  ],
+);
+
+// ---- 1.11 notifications (step 2.1; `saturday_request_id` step 2.6)
 
 export const notifications = pgTable(
   "notifications",
@@ -319,6 +365,7 @@ export const notifications = pgTable(
     userId: ref("user_id").notNull(),
     type: notificationType("type").notNull(),
     bookingId: ref("booking_id"),
+    saturdayRequestId: ref("saturday_request_id"),
     data: jsonb("data").notNull().default(sql`'{}'`), // values for the Arabic text
     readAt: tstz("read_at"),
     createdAt: createdAt(),
@@ -331,6 +378,11 @@ export const notifications = pgTable(
       name: "notifications_booking_id_fkey",
       columns: [t.bookingId],
       foreignColumns: [bookings.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "notifications_saturday_request_id_fkey",
+      columns: [t.saturdayRequestId],
+      foreignColumns: [saturdayRequests.id],
     }).onDelete("restrict"),
     index("notifications_user_idx").on(t.userId, t.createdAt.desc().nullsFirst()),
     index("notifications_unread_idx").on(t.userId).where(sql`${t.readAt} IS NULL`),

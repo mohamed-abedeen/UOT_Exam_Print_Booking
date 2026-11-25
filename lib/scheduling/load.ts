@@ -1,9 +1,9 @@
 // The scheduling lock and the loader of `ctx` (contracts §3 intro, §3.9).
 // A transaction that writes a placement calls takeSchedulingLock() first, then loadContext() on the same `tx`.
 import "server-only";
-import { and, gt, gte, isNull, ne, notInArray, or, sql } from "drizzle-orm";
+import { and, eq, gt, gte, isNull, ne, notInArray, or, sql } from "drizzle-orm";
 import type { Executor, Tx } from "@/db";
-import { bookings, holidays, machineMaintenance, machines, settings as settingsTable } from "@/db/schema";
+import { bookings, holidays, machineMaintenance, machines, saturdayRequests, settings as settingsTable } from "@/db/schema";
 import { atMinutes, localDate } from "./time";
 import type { Busy, ScheduleContext, Settings } from "./types";
 
@@ -41,9 +41,9 @@ export async function loadSettings(ex: Executor): Promise<Settings> {
 /**
  * Everything the pure functions need, from today on. "Holding" rows (every status except cancelled and no_show)
  * occupy their interval — the same rows the constraint `bookings_no_overlap` covers.
- * `ignoreBookingId` (an edit or a delay notice of that booking) leaves it out of `busy`, `loadMinutes` and
- * `largeJobsByDate`. Not loaded yet: Saturday approvals (the table arrives in step 2.6, so a non-working weekday is
- * closed for everyone).
+ * `ignoreBookingId` (an edit, a delay notice or a move of that booking) leaves it out of `busy`, `loadMinutes`,
+ * `largeJobsByDate` and `usedImpressions`. `saturdayApprovals`: this college's approved requests from today on;
+ * `usedImpressions` = its holding bookings that day, own and on behalf (contracts §3.3).
  */
 export async function loadContext(
   ex: Executor,
@@ -74,6 +74,7 @@ export async function loadContext(
       endsAt: bookings.endsAt,
       workDate: bookings.workDate,
       impressions: bookings.impressions,
+      collegeId: bookings.collegeId,
     })
     .from(bookings)
     .where(
@@ -81,6 +82,16 @@ export async function loadContext(
         notInArray(bookings.status, ["cancelled", "no_show"]),
         gte(bookings.workDate, today),
         opts.ignoreBookingId === undefined ? undefined : ne(bookings.id, opts.ignoreBookingId),
+      ),
+    );
+  const approvalRows = await ex
+    .select({ date: saturdayRequests.date, approvedQuantity: saturdayRequests.approvedQuantity })
+    .from(saturdayRequests)
+    .where(
+      and(
+        eq(saturdayRequests.collegeId, opts.collegeId),
+        eq(saturdayRequests.status, "approved"),
+        gte(saturdayRequests.date, today),
       ),
     );
   // A cancelled planned window has ends_at = starts_at (an empty range): it blocks nothing.
@@ -101,8 +112,10 @@ export async function loadContext(
   const busy: Busy[] = [];
   const largeJobsByDate = new Map<string, number>();
   const load = new Map<string, number>();
+  const used = new Map<string, number>(); // this college's impressions per date
   for (const b of bookingRows) {
     const date = b.workDate!;
+    if (b.collegeId === opts.collegeId) used.set(date, (used.get(date) ?? 0) + b.impressions!);
     busy.push({ machineId: b.machineId, start: b.startsAt, end: b.endsAt, bookingId: b.id });
     if (b.impressions! > settings.largeJobThreshold) largeJobsByDate.set(date, (largeJobsByDate.get(date) ?? 0) + 1);
     const key = `${b.machineId}|${date}`;
@@ -115,7 +128,11 @@ export async function loadContext(
     collegeId: opts.collegeId,
     settings,
     holidays: new Set(holidayRows.map((h) => h.date)),
-    saturdayApprovals: [],
+    saturdayApprovals: approvalRows.map((a) => ({
+      date: a.date,
+      approvedQuantity: a.approvedQuantity!,
+      usedImpressions: used.get(a.date) ?? 0,
+    })),
     machines: machineRows,
     busy,
     largeJobsByDate,
