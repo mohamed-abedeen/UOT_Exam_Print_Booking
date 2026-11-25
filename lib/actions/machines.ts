@@ -3,12 +3,14 @@
 // for the operator), the writes to the admin. Rows are never deleted; archiving sets `archived_at`.
 // Step 1.5 does not touch bookings on an archived or edited machine: the reassign-or-flag step of §3.8 comes
 // with the maintenance step (owner, 2026-11-25).
+// Every write takes the scheduling lock first (§3.9), so a booking being placed never sees half a change.
 import { asc, eq } from "drizzle-orm";
 import { z } from "zod";
 import { getDb } from "@/db";
 import { machines } from "@/db/schema";
 import { audit } from "@/lib/auth/audit";
 import { requireRole } from "@/lib/auth/guard";
+import { takeSchedulingLock } from "@/lib/scheduling/load";
 import type { Machine } from "@/lib/scheduling/types";
 
 const ADMIN = ["admin"] as const;
@@ -94,6 +96,7 @@ export async function createMachine(input: unknown): Promise<CreateMachineResult
 
   try {
     return await getDb().transaction(async (tx): Promise<CreateMachineResult> => {
+      await takeSchedulingLock(tx);
       const [machine] = await tx.insert(machines).values(v).returning({ id: machines.id });
       await audit(tx, actor, { action: "machine.create", entity: "machines", entityId: machine.id, details: { after: v } });
       return { ok: true, machine: { id: machine.id } };
@@ -117,6 +120,7 @@ export async function updateMachine(input: unknown): Promise<UpdateMachineResult
 
   try {
     return await getDb().transaction(async (tx): Promise<UpdateMachineResult> => {
+      await takeSchedulingLock(tx);
       const [before] = await tx.select().from(machines).where(eq(machines.id, machineId)).for("update");
       if (!before) return { ok: false, error: "not_found" };
       const beforeFields = fieldsOf(before);
@@ -148,6 +152,7 @@ async function setArchived(input: unknown, archived: boolean): Promise<SetArchiv
 
   try {
     return await getDb().transaction(async (tx): Promise<SetArchivedResult> => {
+      await takeSchedulingLock(tx);
       const [before] = await tx.select().from(machines).where(eq(machines.id, machineId)).for("update");
       if (!before) return { ok: false, error: "not_found" };
       if ((before.archivedAt !== null) === archived) return { ok: true };
