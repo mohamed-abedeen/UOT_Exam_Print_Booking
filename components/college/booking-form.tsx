@@ -3,9 +3,11 @@
 // again on the server (createBooking is the authority). Availability is asked live: each change of the job, the
 // day or the hour asks `getAvailability` again after a short pause, and the answer is the exact time, the nearest
 // free time (accepted by pressing the button), or the reason there is none.
+// With `edit` the same form changes an existing booking (step 2.5): it starts from the booking's values, asks the
+// availability with the booking's id (its own interval does not count as busy) and saves with `editBooking`.
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
-import { createBooking, getAvailability } from "@/lib/actions/bookings";
+import { createBooking, editBooking, getAvailability } from "@/lib/actions/bookings";
 import {
   dayOf,
   digits,
@@ -28,7 +30,7 @@ const CHECK_DELAY_MS = 350;
 const control =
   "w-full rounded-lg border border-zinc-300 bg-transparent px-3 py-2 text-base dark:border-zinc-700 aria-[invalid=true]:border-red-600";
 
-interface Fields {
+export interface Fields {
   doctorName: string;
   doctorPhone: string;
   recipientName: string;
@@ -68,9 +70,15 @@ const isDate = (s: string) => /^\d{4}-\d{2}-\d{2}$/.test(s);
 
 type Answer = { key: string; availability: Availability | null }; // null = the server refused the input
 
-export function BookingForm({ config }: { config: BookingFormConfig }) {
+/** The booking being changed and the form's starting values. */
+export interface EditTarget {
+  bookingId: number;
+  initial: Fields;
+}
+
+export function BookingForm({ config, edit }: { config: BookingFormConfig; edit?: EditTarget }) {
   const router = useRouter();
-  const [f, setF] = useState<Fields>(EMPTY);
+  const [f, setF] = useState<Fields>(edit?.initial ?? EMPTY);
   const [touched, setTouched] = useState<ReadonlySet<keyof Fields>>(new Set());
   const [attempted, setAttempted] = useState(false);
   const [answer, setAnswer] = useState<Answer | null>(null);
@@ -104,7 +112,7 @@ export function BookingForm({ config }: { config: BookingFormConfig }) {
   // ---- live availability
   const ready = !errors.copies && !errors.models && !errors.pagesPerModel && !errors.date && !errors.hour;
   const query = ready ? { copies, models, pagesPerModel: pages, sides: f.sides, date: f.date, hour } : null;
-  const queryKey = query ? JSON.stringify(query) : null;
+  const queryKey = query ? JSON.stringify(edit ? { ...query, bookingId: edit.bookingId } : query) : null;
 
   useEffect(() => {
     if (!queryKey) return;
@@ -146,7 +154,7 @@ export function BookingForm({ config }: { config: BookingFormConfig }) {
         availability.kind === "suggestion"
           ? { machineId: availability.placement.machineId, startsAt: availability.placement.startsAt }
           : undefined;
-      const result = await createBooking({
+      const payload = {
         doctorName: f.doctorName,
         doctorPhone: digits(f.doctorPhone),
         recipientName: f.recipientName,
@@ -155,20 +163,26 @@ export function BookingForm({ config }: { config: BookingFormConfig }) {
         ...query,
         examDate: f.examDate === "" ? null : f.examDate,
         ...(accept ? { accept } : {}),
-      });
+      };
+      const result = edit ? await editBooking({ ...payload, bookingId: edit.bookingId }) : await createBooking(payload);
       if (result.ok) {
         const flag = result.examDateWarning ? "&examWarning=1" : "";
+        const param = edit ? "edited" : "booked";
         redirecting = true; // stay in the "submitting" state until the page changes: no second press
-        router.push(`/college?booked=${encodeURIComponent(result.booking.reference)}${flag}`);
+        router.push(`/college?${param}=${encodeURIComponent(result.booking.reference)}${flag}`);
         return;
       }
       if (result.availability) setAnswer({ key: queryKey, availability: result.availability });
       setNotice(
         result.error === "slot_taken"
           ? "تم حجز هذا الموعد قبل لحظات. راجع الموعد الظاهر أدناه."
-          : result.error === "validation"
-            ? "تعذّر الحجز. راجع البيانات، وقد يكون حساب الكلية موقوفًا."
-            : "تغيّر التوفر. راجع الموعد الظاهر أدناه ثم أعد المحاولة.",
+          : result.error === "not_editable"
+            ? "لم يعد تعديل هذا الحجز ممكنًا: انتهت مهلة التعديل أو تغيّرت حالته."
+            : result.error === "not_found"
+              ? "الحجز غير موجود."
+              : result.error === "validation"
+                ? `تعذّر ${edit ? "الحفظ" : "الحجز"}. راجع البيانات، وقد يكون حساب الكلية موقوفًا.`
+                : "تغيّر التوفر. راجع الموعد الظاهر أدناه ثم أعد المحاولة.",
       );
     } finally {
       if (!redirecting) setSubmitting(false);
@@ -367,7 +381,17 @@ export function BookingForm({ config }: { config: BookingFormConfig }) {
         disabled={blocked}
         className="rounded-lg bg-zinc-900 px-5 py-3 text-base font-medium text-white transition-colors hover:bg-zinc-700 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
       >
-        {submitting ? "جارٍ الحجز…" : availability?.kind === "suggestion" ? "احجز الموعد المقترح" : "احجز"}
+        {edit
+          ? submitting
+            ? "جارٍ الحفظ…"
+            : availability?.kind === "suggestion"
+              ? "احفظ بالموعد المقترح"
+              : "احفظ التعديل"
+          : submitting
+            ? "جارٍ الحجز…"
+            : availability?.kind === "suggestion"
+              ? "احجز الموعد المقترح"
+              : "احجز"}
       </button>
     </form>
   );
