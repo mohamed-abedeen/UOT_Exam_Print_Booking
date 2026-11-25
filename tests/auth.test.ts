@@ -4,6 +4,8 @@
 import { createHash } from "node:crypto";
 import { and, count, eq } from "drizzle-orm";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { loginAction } from "@/app/login/actions";
+import { POST as logoutRoute } from "@/app/logout/route";
 import { getDb } from "@/db";
 import { auditLog, bookings, colleges, machines, sessions, users } from "@/db/schema";
 import { changeOwnPassword, login, logout } from "@/lib/actions/session";
@@ -321,6 +323,34 @@ describe.skipIf(!process.env.DATABASE_URL)("step 1.2: login and permissions", ()
       expect(await getDb().select().from(sessions).where(eq(sessions.userId, ids.operator))).toEqual([]);
       browser.cookies.set(SESSION_COOKIE, tokens.operator);
       await expect(requireRole(["operator"])).rejects.toMatchObject({ to: "/login" });
+    });
+
+    // Both end with a full page load in the browser, so no page of the previous user stays alive in the tab.
+    it("the logout route signs out and answers with a real redirect to /login", async () => {
+      actAs("operator");
+      const response = await logoutRoute();
+      expect(response.status).toBe(303);
+      expect(response.headers.get("location")).toBe("/login");
+      expect(browser.cookies.has(SESSION_COOKIE)).toBe(false);
+      expect(await getDb().select().from(sessions).where(eq(sessions.userId, ids.operator))).toEqual([]);
+
+      browser.reset(); // nobody signed in: still the same answer, nothing to delete
+      expect((await logoutRoute()).status).toBe(303);
+    });
+
+    it("the login form action returns where to go instead of redirecting", async () => {
+      const form = (username: string, password: string) => {
+        const data = new FormData();
+        data.set("username", username);
+        data.set("password", password);
+        return data;
+      };
+      browser.reset();
+      expect(await loginAction(undefined, form("operator", WRONG))).toEqual({ error: "invalid" });
+      expect(await loginAction(undefined, form("operator", PASSWORD))).toEqual({ to: "/operator" });
+      await getDb().update(users).set({ mustChangePassword: true }).where(eq(users.id, ids.admin));
+      browser.reset();
+      expect(await loginAction(undefined, form("admin", PASSWORD))).toEqual({ to: "/change-password" });
     });
 
     it("deactivating a user ends their sessions at once and blocks login", async () => {

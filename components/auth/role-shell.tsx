@@ -4,7 +4,6 @@
 import "server-only";
 import { redirect } from "next/navigation";
 import { Suspense } from "react";
-import { logoutAction } from "@/app/login/actions";
 import { getActor, homeFor } from "@/lib/auth/guard";
 import type { Role } from "@/lib/auth/session";
 
@@ -20,7 +19,8 @@ async function UserMenu() {
   const actor = await getActor();
   if (!actor) return null;
   return (
-    <form action={logoutAction} className="flex items-center gap-3 text-sm font-normal">
+    // A plain post to app/logout/route.ts: logout ends with a full page load (see that file).
+    <form method="post" action="/logout" className="flex items-center gap-3 text-sm font-normal">
       <span>{actor.fullName}</span>
       <button
         type="submit"
