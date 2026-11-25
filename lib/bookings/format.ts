@@ -1,6 +1,7 @@
 // Arabic labels and display formatting for the booking screens (college and operator): one wording everywhere. Pure (no database, no `server-only`): the
 // booking form (a client component) and the list page both use it. Times use the fixed +02:00 offset of
 // lib/scheduling/time.ts, never Intl, so the server and the browser print the same text.
+import type { MoveRefusal } from "@/lib/scheduling/availability";
 import { minutesOfDay, TZ_OFFSET_MINUTES, weekdayOf } from "@/lib/scheduling/time";
 import type { BookingStatus, Refusal, ServiceType, Sides } from "@/lib/scheduling/types";
 
@@ -78,4 +79,34 @@ export function startHours(workStart: string, workEnd: string): number[] {
 /** 9 → '09:00' */
 export function hourLabel(hour: number): string {
   return `${String(hour).padStart(2, "0")}:00`;
+}
+
+/** Why the admin's move target was refused (step 2.4 `MoveRefusal`). */
+export const MOVE_REFUSAL_LABEL: Record<MoveRefusal, string> = {
+  not_eligible: "هذه الآلة لا تناسب العمل (عدد الأوراق أو الطباعة على وجهين)",
+  past: REFUSAL_LABEL.past,
+  day_closed: REFUSAL_LABEL.day_closed,
+  outside_hours: "الموعد خارج ساعات العمل أو ينتهي بعد الإغلاق",
+  large_job_limit: REFUSAL_LABEL.large_job_limit,
+  saturday_quota: REFUSAL_LABEL.saturday_quota,
+  busy: "الآلة مشغولة أو في صيانة في هذا الوقت",
+};
+
+/** Why a booking is in the admin's re-schedule list (`reschedule_reason`). */
+export const RESCHEDULE_REASON_LABEL = {
+  maintenance: "صيانة الآلة",
+  delay_no_slot: "إشعار تأخير بلا وقت متأخر متاح",
+  machine_change: "تغيير في بيانات الآلة أو أرشفتها",
+} as const;
+
+/** An instant → 'الأحد 2026-11-29 10:00' on the business clock. */
+export function dayTime(at: Date): string {
+  return `${formatDay(dayOf(at))} ${timeOf(at)}`;
+}
+
+/** 90 → '1 س 30 د' */
+export function durationText(minutes: number): string {
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  return h === 0 ? `${m} د` : m === 0 ? `${h} س` : `${h} س ${m} د`;
 }

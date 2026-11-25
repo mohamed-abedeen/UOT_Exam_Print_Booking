@@ -8,7 +8,7 @@ import { bookings, colleges, machines } from "@/db/schema";
 import { AuthError, collegeScope, type Actor } from "@/lib/auth/guard";
 import { whatsAppLink, type WhatsAppKind } from "@/lib/scheduling/helpers";
 import { loadSettings } from "@/lib/scheduling/load";
-import { localDate } from "@/lib/scheduling/time";
+import { addMinutes, localDate } from "@/lib/scheduling/time";
 import type { BookingStatus, ServiceType, Sides } from "@/lib/scheduling/types";
 
 /** One row of the own-bookings list. No machine: a college does not see which machine runs its job. */
@@ -25,6 +25,14 @@ export interface BookingListItem {
   pagesPerModel: number;
   sides: Sides;
   status: BookingStatus;
+  /** The college may edit or cancel it now (status `booked`, before the edit deadline). An admin: `booked`. */
+  canEdit: boolean;
+  /** The college may send its one delay notice now. Never true for an admin (contracts §4 rule 5). */
+  canDelay: boolean;
+  /** Set once the delay notice was accepted: where the booking started before it moved. */
+  delayedFrom: Date | null;
+  /** The admin has to place it again (the card says so). */
+  needsReschedule: boolean;
 }
 
 export type ListBookingsResult = { ok: true; bookings: BookingListItem[] } | { ok: false; error: "validation" };
@@ -44,7 +52,8 @@ export async function listBookingsFor(actor: Actor, input: unknown): Promise<Lis
   if (!parsed.success) return { ok: false, error: "validation" };
   const scope = collegeScope(actor, parsed.data.collegeId);
 
-  const rows = await getDb()
+  const db = getDb();
+  const rows = await db
     .select({
       id: bookings.id,
       reference: bookings.reference,
@@ -58,11 +67,36 @@ export async function listBookingsFor(actor: Actor, input: unknown): Promise<Lis
       pagesPerModel: bookings.pagesPerModel,
       sides: bookings.sides,
       status: bookings.status,
+      delayNoticeAt: bookings.delayNoticeAt,
+      delayedFrom: bookings.delayedFrom,
+      needsReschedule: bookings.needsReschedule,
     })
     .from(bookings)
     .where(scope === null ? undefined : eq(bookings.collegeId, scope))
     .orderBy(desc(bookings.startsAt), desc(bookings.id));
-  return { ok: true, bookings: rows };
+
+  // The buttons' flags, from the same rules the actions enforce (§3.7, T5). A hint for the screen only: the action
+  // decides again under the lock.
+  const now = new Date();
+  const { editDeadlineMinutes, delayDeadlineMinutes } = await loadSettings(db);
+  const editFrom = addMinutes(now, editDeadlineMinutes).getTime();
+  const delayFrom = addMinutes(now, delayDeadlineMinutes).getTime();
+  return {
+    ok: true,
+    bookings: rows.map(({ delayNoticeAt, ...r }) => {
+      const booked = r.status === "booked";
+      return {
+        ...r,
+        canEdit: booked && (actor.role === "admin" || r.startsAt.getTime() >= editFrom),
+        canDelay:
+          actor.role === "college" &&
+          booked &&
+          delayNoticeAt === null &&
+          !r.needsReschedule &&
+          r.startsAt.getTime() >= delayFrom,
+      };
+    }),
+  };
 }
 
 /** What the booking form needs from the settings, and nothing else (a college cannot read the settings). */

@@ -216,11 +216,15 @@ describe.skipIf(!process.env.DATABASE_URL)("step 1.6: listBookings and getBookin
       if (!result.ok) throw new Error("expected ok");
       expect(Object.keys(result.bookings[0]).sort()).toEqual(
         [
+          "canDelay",
+          "canEdit",
           "collegeId",
           "copies",
+          "delayedFrom",
           "endsAt",
           "id",
           "models",
+          "needsReschedule",
           "pagesPerModel",
           "reference",
           "serviceType",
@@ -230,6 +234,40 @@ describe.skipIf(!process.env.DATABASE_URL)("step 1.6: listBookings and getBookin
           "subject",
         ].sort(),
       );
+    });
+
+    it("canEdit and canDelay follow the two deadlines (60 min), the status, the flag and the one notice (step 2.5)", async () => {
+      const tooLate = await insertBooking("A", at(SUNDAY, "08:50")); // 50 min away: inside both deadlines
+      const onEdge = await insertBooking("A", at(SUNDAY, "09:00")); // exactly 60 min: still allowed
+      const delayed = await insertBooking("A", at(SUNDAY, "10:00"), { delayNoticeAt: NOW, delayedFrom: at(SUNDAY, "09:30") });
+      const flagged = await insertBooking("A", at(SUNDAY, "11:00"), { needsReschedule: true, rescheduleReason: "maintenance" });
+      const started = await insertBooking("A", at(SUNDAY, "12:00"), {
+        status: "cancelled",
+        cancelledAt: NOW,
+        cancelledBy: ids.collegeA,
+      });
+
+      actAs("collegeA");
+      const result = await listBookings({});
+      if (!result.ok) throw new Error("expected ok");
+      const by = new Map(result.bookings.map((b) => [b.id, b]));
+      const flags = (id: number) => [by.get(id)!.canEdit, by.get(id)!.canDelay];
+      expect(flags(tooLate)).toEqual([false, false]);
+      expect(flags(onEdge)).toEqual([true, true]);
+      expect(flags(delayed)).toEqual([true, false]); // one notice only
+      expect(flags(flagged)).toEqual([true, false]); // waiting for the admin: no notice, edit is allowed
+      expect(flags(started)).toEqual([false, false]);
+      expect(by.get(delayed)!.delayedFrom).toEqual(at(SUNDAY, "09:30"));
+      expect(by.get(flagged)!.needsReschedule).toBe(true);
+
+      // An admin edits any booked row at any time, and never sends a delay notice.
+      actAs("admin");
+      const asAdmin = await listBookings({});
+      if (!asAdmin.ok) throw new Error("expected ok");
+      const adminBy = new Map(asAdmin.bookings.map((b) => [b.id, b]));
+      expect([adminBy.get(tooLate)!.canEdit, adminBy.get(tooLate)!.canDelay]).toEqual([true, false]);
+      expect([adminBy.get(onEdge)!.canEdit, adminBy.get(onEdge)!.canDelay]).toEqual([true, false]);
+      expect([adminBy.get(started)!.canEdit, adminBy.get(started)!.canDelay]).toEqual([false, false]);
     });
 
     it("a college that names a college is refused, its own or another, valid or not", async () => {

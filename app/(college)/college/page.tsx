@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Suspense } from "react";
+import { BookingActions } from "@/components/college/booking-actions";
 import { listBookings } from "@/lib/actions/bookings";
 import {
   dayOf,
@@ -49,19 +50,23 @@ async function BookingList({ searchParams }: { searchParams: PageProps<"/college
   const query = await searchParams;
   const result = await listBookings({});
   const booked = typeof query.booked === "string" ? query.booked : null;
+  const edited = typeof query.edited === "string" ? query.edited : null;
   const examWarning = query.examWarning === "1";
   const rows = result.ok ? result.bookings : [];
   // The banner is shown only for a reference that is really one of this college's bookings.
   const justBooked = booked !== null && rows.some((b) => b.reference === booked) ? booked : null;
+  const justEdited = edited !== null && rows.some((b) => b.reference === edited) ? edited : null;
+  const banner = justBooked ?? justEdited;
 
   return (
     <>
-      {justBooked && (
+      {banner && (
         <div
           role="status"
           className="rounded-lg border border-green-600 bg-green-50 p-3 text-green-900 dark:bg-green-950 dark:text-green-200"
         >
-          تم الحجز. رقم المرجع: <bdi dir="ltr" className="font-bold">{justBooked}</bdi>
+          {justBooked ? "تم الحجز." : "تم تعديل الحجز."} رقم المرجع:{" "}
+          <bdi dir="ltr" className="font-bold">{banner}</bdi>
           {examWarning && (
             <p className="mt-1 text-sm text-amber-800 dark:text-amber-300">
               تنبيه: يوم الحجز يصادف تاريخ الامتحان أو يأتي بعده.
@@ -106,6 +111,15 @@ function BookingCard({ booking: b }: { booking: BookingListItem }) {
         {SERVICE_LABEL[b.serviceType]} · {b.copies} نسخة × {b.models} نموذج · {b.pagesPerModel} صفحة ·{" "}
         {SIDES_LABEL[b.sides]}
       </p>
+      {b.delayedFrom && b.delayedFrom.getTime() !== b.startsAt.getTime() && (
+        <p className="text-sm text-zinc-600 dark:text-zinc-400">أُرسل إشعار تأخير؛ كان الموعد من {timeOf(b.delayedFrom)}.</p>
+      )}
+      {b.needsReschedule && b.status === "booked" && (
+        <p role="status" className="rounded-lg border border-amber-500 bg-amber-50 p-2 text-sm text-amber-900 dark:bg-amber-950 dark:text-amber-200">
+          بانتظار قرار الإدارة بشأن موعد جديد.
+        </p>
+      )}
+      <BookingActions bookingId={b.id} canEdit={b.canEdit} canDelay={b.canDelay} />
     </li>
   );
 }

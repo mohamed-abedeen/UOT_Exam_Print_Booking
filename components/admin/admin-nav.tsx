@@ -2,6 +2,8 @@ import Link from "next/link";
 
 const links = [
   { href: "/admin/machines", label: "الآلات" },
+  { href: "/admin/maintenance", label: "الصيانة" },
+  { href: "/admin/reschedule", label: "إعادة الجدولة" },
   { href: "/admin/colleges", label: "الكليات" },
   { href: "/admin/accounts", label: "الحسابات" },
 ];

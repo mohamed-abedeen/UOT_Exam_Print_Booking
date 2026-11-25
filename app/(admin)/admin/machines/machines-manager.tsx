@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { button, buttonPrimary, errorText, field, td, th } from "@/components/admin/styles";
@@ -15,7 +16,17 @@ const errorMessage: Record<string, string> = {
 
 type Editing = { kind: "new" } | { kind: "edit"; machine: MachineRow } | null;
 
-function MachineForm({ editing, onDone }: { editing: NonNullable<Editing>; onDone: () => void }) {
+/** What an edit or an archive did to future bookings the machine no longer takes (contracts §3.8, last bullet). */
+type Touched = { moved: unknown[]; flagged: unknown[] };
+
+function touchedNotice(result: Touched): string | null {
+  const parts: string[] = [];
+  if (result.moved.length > 0) parts.push(`نُقل ${result.moved.length} حجزًا إلى آلة أخرى في الوقت نفسه`);
+  if (result.flagged.length > 0) parts.push(`${result.flagged.length} حجزًا لم يجد آلة بديلة وينتظر إعادة الجدولة`);
+  return parts.length > 0 ? `${parts.join("، و")}.` : null;
+}
+
+function MachineForm({ editing, onDone }: { editing: NonNullable<Editing>; onDone: (touched?: Touched) => void }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -40,7 +51,7 @@ function MachineForm({ editing, onDone }: { editing: NonNullable<Editing>; onDon
       if (!result.ok) return setError(errorMessage[result.error]);
       setError(null);
       router.refresh();
-      onDone();
+      onDone("moved" in result ? result : undefined);
     });
   }
 
@@ -100,7 +111,7 @@ function MachineForm({ editing, onDone }: { editing: NonNullable<Editing>; onDon
         <button type="submit" disabled={pending} className={buttonPrimary}>
           حفظ
         </button>
-        <button type="button" onClick={onDone} className={button}>
+        <button type="button" onClick={() => onDone()} className={button}>
           إلغاء
         </button>
       </div>
@@ -113,11 +124,13 @@ export function MachinesManager({ machines }: { machines: MachineRow[] }) {
   const [pending, startTransition] = useTransition();
   const [editing, setEditing] = useState<Editing>(null);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
 
   function toggle(machine: MachineRow) {
     startTransition(async () => {
       const result = machine.archivedAt ? await unarchiveMachine({ machineId: machine.id }) : await archiveMachine({ machineId: machine.id });
       setError(result.ok ? null : errorMessage[result.error]);
+      setNotice(result.ok ? touchedNotice(result) : null);
       router.refresh();
     });
   }
@@ -132,7 +145,24 @@ export function MachinesManager({ machines }: { machines: MachineRow[] }) {
           </button>
         )}
       </div>
-      {editing && <MachineForm key={editing.kind === "edit" ? editing.machine.id : "new"} editing={editing} onDone={() => setEditing(null)} />}
+      {editing && (
+        <MachineForm
+          key={editing.kind === "edit" ? editing.machine.id : "new"}
+          editing={editing}
+          onDone={(touched) => {
+            setEditing(null);
+            setNotice(touched ? touchedNotice(touched) : null);
+          }}
+        />
+      )}
+      {notice && (
+        <p role="status" className="mb-3 rounded-lg border border-amber-500 bg-amber-50 p-3 text-amber-900 dark:bg-amber-950 dark:text-amber-200">
+          بسبب هذا التغيير: {notice}{" "}
+          <Link href="/admin/reschedule" className="font-medium underline">
+            قائمة إعادة الجدولة
+          </Link>
+        </p>
+      )}
       {error && (
         <p role="alert" className={`${errorText} mb-2`}>
           {error}
