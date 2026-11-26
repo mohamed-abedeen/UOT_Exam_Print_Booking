@@ -13,7 +13,7 @@ const links = [
 
 export function AdminNav() {
   return (
-    <nav className="mb-4 flex gap-4 border-b border-zinc-300 pb-3 dark:border-zinc-700">
+    <nav className="mb-4 flex flex-wrap gap-x-4 gap-y-2 border-b border-zinc-300 pb-3 dark:border-zinc-700">
       {links.map((l) => (
         <Link key={l.href} href={l.href} className="underline-offset-4 hover:underline">
           {l.label}
