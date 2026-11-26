@@ -8,6 +8,7 @@ const links = [
   { href: "/admin/saturday", label: "طلبات السبت" },
   { href: "/admin/colleges", label: "الكليات" },
   { href: "/admin/accounts", label: "الحسابات" },
+  { href: "/admin/settings", label: "الإعدادات" },
 ];
 
 export function AdminNav() {
