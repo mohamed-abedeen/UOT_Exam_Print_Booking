@@ -825,6 +825,24 @@ type DecideSaturdayRequestResult =
 // saturday_decided { date, status, approvedQuantity, note }; both set saturday_request_id
 ```
 
+Settings and holidays (§1.12, §5). Keys are the camelCase of §5 (`workStart` = `work_start`).
+
+```ts
+// getSettings(): { ok: true; settings: Settings }
+type UpdateSettingsInput = Partial<Settings>;   // at least one key; every key sent validated (§5), all saved or none;
+                                                // workEnd > workStart on the merged values; weekdays stored sorted
+type UpdateSettingsResult = { ok: true; settings: Settings } | { ok: false; error: 'validation' };
+// one settings.update audit row { changes: { work_end: { from, to }, … } } for the keys whose value changed; none if none
+
+// listHolidays(): { ok: true; items: { date, name, createdByName, createdAt }[] }   every row, newest date first
+interface AddHolidayInput { date: string; name: string }   // date today or later; name trimmed, 1–200
+type AddHolidayResult =
+  | { ok: true; holiday: { date: string; name: string } }
+  | { ok: false; error: 'validation' | 'duplicate' }
+  | { ok: false; error: 'has_bookings'; bookings: { id: number; reference: string; startsAt: Date }[] };  // by start
+type RemoveHolidayResult = { ok: true } | { ok: false; error: 'validation' | 'not_found' | 'refused' };  // input { date }; refused = past
+```
+
 ## 5. Settings keys
 
 Rows of `settings`; `value` is JSON. Seeded with the defaults.
@@ -939,3 +957,6 @@ All approved by the owner on 2026-11-25 (1–16 before the Opus 5.5 review, 17�
 25. A Saturday request is for a Saturday after today that is not a holiday and not already a working weekday. One open request per college and date; after a rejection a new one may be sent. (Owner, 2026-11-25, step 2.6.)
 26. A request is decided once, while pending and its date is today or later; the approved quantity may differ from the expected one; the note is optional. An approval is never withdrawn or revoked. (Owner, 2026-11-25, step 2.6.)
 27. `createSaturdayRequest` answers `duplicate` for a second open request; `listSaturdayRequests` returns newest date first, with `collegeId` and `status` filters for the admin. (Owner, 2026-11-25, step 2.6.)
+28. `updateSettings` takes a partial patch: only the keys sent change, all are validated and saved together or not at all; `work_end > work_start` is checked on the merged values. (Owner, 2026-11-26, step 2.6b.)
+29. `addHoliday` takes a date today or later; a second holiday on the same date answers `duplicate`; `has_bookings` lists the holding bookings that overlap the date, by start. (Owner, 2026-11-26, step 2.6b.)
+30. `listHolidays` returns every holiday, past ones too, newest date first; `removeHoliday` removes only a holiday dated today or later (`refused` for a past one) and takes no lock: it only adds room. (Owner, 2026-11-26, step 2.6b.)
