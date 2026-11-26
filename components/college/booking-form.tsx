@@ -5,6 +5,8 @@
 // free time (accepted by pressing the button), or the reason there is none.
 // With `edit` the same form changes an existing booking (step 2.5): it starts from the booking's values, asks the
 // availability with the booking's id (its own interval does not count as busy) and saves with `editBooking`.
+// With `onBehalf` (step 2.7) an admin books for a college they pick: the college goes with every availability
+// question and with the booking, and a success stays on the page and shows the reference.
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { createBooking, editBooking, getAvailability } from "@/lib/actions/bookings";
@@ -76,7 +78,22 @@ export interface EditTarget {
   initial: Fields;
 }
 
-export function BookingForm({ config, edit }: { config: BookingFormConfig; edit?: EditTarget }) {
+/** The admin's mode: the colleges to pick from. */
+export interface OnBehalf {
+  colleges: { id: number; name: string }[];
+}
+
+type Booked = { reference: string; collegeName: string; examWarning: boolean };
+
+export function BookingForm({
+  config,
+  edit,
+  onBehalf,
+}: {
+  config: BookingFormConfig;
+  edit?: EditTarget;
+  onBehalf?: OnBehalf;
+}) {
   const router = useRouter();
   const [f, setF] = useState<Fields>(edit?.initial ?? EMPTY);
   const [touched, setTouched] = useState<ReadonlySet<keyof Fields>>(new Set());
@@ -84,6 +101,8 @@ export function BookingForm({ config, edit }: { config: BookingFormConfig; edit?
   const [answer, setAnswer] = useState<Answer | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  const [collegeId, setCollegeId] = useState("");
+  const [booked, setBooked] = useState<Booked | null>(null);
 
   const hours = useMemo(() => startHours(config.workStart, config.workEnd), [config.workStart, config.workEnd]);
   const set = <K extends keyof Fields>(key: K, value: Fields[K]) => setF((prev) => ({ ...prev, [key]: value }));
@@ -108,10 +127,22 @@ export function BookingForm({ config, edit }: { config: BookingFormConfig; edit?
   if (!hours.includes(hour)) errors.hour = "اختر الساعة";
   if (f.examDate !== "" && !isDate(f.examDate)) errors.examDate = "تاريخ غير صالح";
   const shown = (key: keyof Fields) => (touched.has(key) || attempted ? errors[key] : undefined);
+  const collegeError = onBehalf && collegeId === "" ? "اختر الكلية" : undefined;
 
   // ---- live availability
-  const ready = !errors.copies && !errors.models && !errors.pagesPerModel && !errors.date && !errors.hour;
-  const query = ready ? { copies, models, pagesPerModel: pages, sides: f.sides, date: f.date, hour } : null;
+  const ready =
+    !errors.copies && !errors.models && !errors.pagesPerModel && !errors.date && !errors.hour && !collegeError;
+  const query = ready
+    ? {
+        copies,
+        models,
+        pagesPerModel: pages,
+        sides: f.sides,
+        date: f.date,
+        hour,
+        ...(onBehalf ? { collegeId: Number(collegeId) } : {}),
+      }
+    : null;
   const queryKey = query ? JSON.stringify(edit ? { ...query, bookingId: edit.bookingId } : query) : null;
 
   useEffect(() => {
@@ -139,7 +170,8 @@ export function BookingForm({ config, edit }: { config: BookingFormConfig; edit?
     event.preventDefault();
     setAttempted(true);
     setNotice(null);
-    if (Object.keys(errors).length > 0) {
+    setBooked(null);
+    if (Object.keys(errors).length > 0 || collegeError) {
       // Take the user to the first field with a message; the messages appear after this render.
       const form = event.currentTarget;
       setTimeout(() => form.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus(), 0);
@@ -165,6 +197,21 @@ export function BookingForm({ config, edit }: { config: BookingFormConfig; edit?
         ...(accept ? { accept } : {}),
       };
       const result = edit ? await editBooking({ ...payload, bookingId: edit.bookingId }) : await createBooking(payload);
+      if (result.ok && onBehalf) {
+        // Stay on the page: the admin books for several colleges in a row. The college stays chosen.
+        const college = onBehalf.colleges.find((c) => c.id === Number(collegeId));
+        setBooked({
+          reference: result.booking.reference,
+          collegeName: college?.name ?? "",
+          examWarning: result.examDateWarning,
+        });
+        setF(EMPTY);
+        setTouched(new Set());
+        setAttempted(false);
+        setAnswer(null);
+        window.scrollTo({ top: 0, behavior: "smooth" }); // the banner is at the top
+        return;
+      }
       if (result.ok) {
         const flag = result.examDateWarning ? "&examWarning=1" : "";
         const param = edit ? "edited" : "booked";
@@ -193,6 +240,32 @@ export function BookingForm({ config, edit }: { config: BookingFormConfig; edit?
 
   return (
     <form onSubmit={onSubmit} noValidate className="mx-auto flex w-full max-w-2xl flex-col gap-6">
+      {booked && (
+        <p role="status" className="rounded-lg border border-green-600 bg-green-50 p-3 text-sm text-green-900 dark:bg-green-950 dark:text-green-200">
+          تم الحجز لكلية {booked.collegeName}. المرجع: {booked.reference}
+          {booked.examWarning && " (تنبيه: يوم الحجز يصادف تاريخ الامتحان أو يأتي بعده)"}
+        </p>
+      )}
+      {onBehalf && (
+        <fieldset className="flex flex-col gap-4">
+          <legend className="mb-1 text-lg font-bold">الكلية</legend>
+          <Field label="احجز نيابةً عن" error={attempted ? collegeError : undefined}>
+            <select
+              value={collegeId}
+              onChange={(e) => setCollegeId(e.target.value)}
+              aria-invalid={attempted && collegeError !== undefined}
+              className={control}
+            >
+              <option value="">اختر الكلية</option>
+              {onBehalf.colleges.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+          </Field>
+        </fieldset>
+      )}
       <fieldset className="flex flex-col gap-4">
         <legend className="mb-1 text-lg font-bold">بيانات الدكتور والمستلم</legend>
         <Field label="اسم الدكتور" error={shown("doctorName")}>
