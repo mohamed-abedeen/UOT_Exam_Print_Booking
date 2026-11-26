@@ -110,3 +110,17 @@ export function durationText(minutes: number): string {
   const m = minutes % 60;
   return h === 0 ? `${m} د` : m === 0 ? `${h} س` : `${h} س ${m} د`;
 }
+
+/** A Saturday request's status (step 2.7). */
+export const SATURDAY_STATUS_LABEL = {
+  pending: "قيد المراجعة",
+  approved: "تمت الموافقة",
+  rejected: "مرفوض",
+} as const;
+
+/** Badge colours of a Saturday request's status; the college and admin screens share them. */
+export const SATURDAY_STATUS_TONE = {
+  pending: "border-amber-500 text-amber-800 dark:text-amber-300",
+  approved: "border-green-600 text-green-800 dark:text-green-300",
+  rejected: "border-red-600 text-red-800 dark:text-red-300",
+} as const;

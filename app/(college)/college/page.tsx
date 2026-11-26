@@ -32,12 +32,17 @@ export default function CollegePage({ searchParams }: PageProps<"/college">) {
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-4">
       <div className="flex items-center justify-between gap-3">
         <h1 className="text-2xl font-bold">حجوزاتي</h1>
-        <Link
-          href="/college/book"
-          className="rounded-lg bg-zinc-900 px-4 py-2 font-medium text-white transition-colors hover:bg-zinc-700 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
-        >
-          حجز جديد
-        </Link>
+        <div className="flex items-center gap-3">
+          <Link href="/college/saturday" className="text-sm underline underline-offset-4">
+            طلبات السبت
+          </Link>
+          <Link
+            href="/college/book"
+            className="rounded-lg bg-zinc-900 px-4 py-2 font-medium text-white transition-colors hover:bg-zinc-700 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
+          >
+            حجز جديد
+          </Link>
+        </div>
       </div>
       <Suspense fallback={<p className="text-zinc-600 dark:text-zinc-400">جارٍ التحميل…</p>}>
         <BookingList searchParams={searchParams} />

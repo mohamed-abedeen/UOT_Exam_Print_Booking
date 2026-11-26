@@ -4,6 +4,8 @@ const links = [
   { href: "/admin/machines", label: "الآلات" },
   { href: "/admin/maintenance", label: "الصيانة" },
   { href: "/admin/reschedule", label: "إعادة الجدولة" },
+  { href: "/admin/book", label: "حجز لكلية" },
+  { href: "/admin/saturday", label: "طلبات السبت" },
   { href: "/admin/colleges", label: "الكليات" },
   { href: "/admin/accounts", label: "الحسابات" },
 ];
