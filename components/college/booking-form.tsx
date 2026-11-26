@@ -76,6 +76,8 @@ type Answer = { key: string; availability: Availability | null }; // null = the 
 export interface EditTarget {
   bookingId: number;
   initial: Fields;
+  /** The booking's interval now: shown, and kept, while the job, the day and the hour are not changed. */
+  slot: { startsAt: Date; endsAt: Date };
 }
 
 /** The admin's mode: the colleges to pick from. */
@@ -114,6 +116,16 @@ export function BookingForm({
   const models = whole(f.models);
   const pages = whole(f.pagesPerModel);
   const hour = f.hour === "" ? Number.NaN : Number(f.hour);
+  // An edit that leaves the job, the day and the hour alone keeps its placement on the server (contracts §3.7: a
+  // plain update), so nothing is asked and the day and hour are not checked again (step 2.8).
+  const kept =
+    edit !== undefined &&
+    copies === whole(edit.initial.copies) &&
+    models === whole(edit.initial.models) &&
+    pages === whole(edit.initial.pagesPerModel) &&
+    f.sides === edit.initial.sides &&
+    f.date === edit.initial.date &&
+    f.hour === edit.initial.hour;
   const errors: Partial<Record<keyof Fields, string>> = {};
   if (f.doctorName.trim() === "") errors.doctorName = "أدخل اسم الدكتور";
   if (phone === null) errors.doctorPhone = "رقم الهاتف غير صالح، مثال: 0912345678";
@@ -122,9 +134,11 @@ export function BookingForm({
   if (!within(copies, 1, 20_000)) errors.copies = "عدد النسخ من 1 إلى 20000";
   if (!within(models, 1, 50)) errors.models = "عدد النماذج من 1 إلى 50";
   if (!within(pages, 1, 500)) errors.pagesPerModel = "عدد الصفحات من 1 إلى 500";
-  if (!isDate(f.date)) errors.date = "اختر اليوم";
-  else if (f.date < config.today) errors.date = "لا يمكن الحجز في يوم مضى";
-  if (!hours.includes(hour)) errors.hour = "اختر الساعة";
+  if (!kept) {
+    if (!isDate(f.date)) errors.date = "اختر اليوم";
+    else if (f.date < config.today) errors.date = "لا يمكن الحجز في يوم مضى";
+    if (!hours.includes(hour)) errors.hour = "اختر الساعة";
+  }
   if (f.examDate !== "" && !isDate(f.examDate)) errors.examDate = "تاريخ غير صالح";
   const shown = (key: keyof Fields) => (touched.has(key) || attempted ? errors[key] : undefined);
   const collegeError = onBehalf && collegeId === "" ? "اختر الكلية" : undefined;
@@ -143,7 +157,7 @@ export function BookingForm({
         ...(onBehalf ? { collegeId: Number(collegeId) } : {}),
       }
     : null;
-  const queryKey = query ? JSON.stringify(edit ? { ...query, bookingId: edit.bookingId } : query) : null;
+  const queryKey = query && !kept ? JSON.stringify(edit ? { ...query, bookingId: edit.bookingId } : query) : null;
 
   useEffect(() => {
     if (!queryKey) return;
@@ -160,7 +174,7 @@ export function BookingForm({
 
   const current = answer && answer.key === queryKey ? answer : null; // an answer to older input is not shown
   const availability = current?.availability ?? null;
-  const checking = query !== null && current === null;
+  const checking = queryKey !== null && current === null;
 
   // ---- the exam-date warning looks at the day the booking would really land on
   const landingDay = availability?.kind === "suggestion" ? dayOf(availability.placement.startsAt) : f.date;
@@ -177,13 +191,14 @@ export function BookingForm({
       setTimeout(() => form.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus(), 0);
       return;
     }
-    if (!query || !queryKey || !availability || availability.kind === "none") return;
+    if (!query) return;
+    if (!kept && (!availability || availability.kind === "none")) return;
 
     setSubmitting(true);
     let redirecting = false;
     try {
       const accept =
-        availability.kind === "suggestion"
+        availability?.kind === "suggestion"
           ? { machineId: availability.placement.machineId, startsAt: availability.placement.startsAt }
           : undefined;
       const payload = {
@@ -219,7 +234,7 @@ export function BookingForm({
         router.push(`/college?${param}=${encodeURIComponent(result.booking.reference)}${flag}`);
         return;
       }
-      if (result.availability) setAnswer({ key: queryKey, availability: result.availability });
+      if (result.availability && queryKey) setAnswer({ key: queryKey, availability: result.availability });
       setNotice(
         result.error === "slot_taken"
           ? "تم حجز هذا الموعد قبل لحظات. راجع الموعد الظاهر أدناه."
@@ -236,7 +251,7 @@ export function BookingForm({
     }
   }
 
-  const blocked = submitting || checking || !availability || availability.kind === "none";
+  const blocked = submitting || (!kept && (checking || !availability || availability.kind === "none"));
 
   return (
     <form onSubmit={onSubmit} noValidate className="mx-auto flex w-full max-w-2xl flex-col gap-6">
@@ -440,7 +455,13 @@ export function BookingForm({
             </select>
           </Field>
         </div>
-        <AvailabilityBox query={query !== null} checking={checking} availability={availability} />
+        {kept && edit ? (
+          <div role="status" aria-live="polite" className={tone.info}>
+            يبقى الحجز في موعده الحالي: {slotText(edit.slot.startsAt, edit.slot.endsAt)}
+          </div>
+        ) : (
+          <AvailabilityBox query={query !== null} checking={checking} availability={availability} />
+        )}
       </fieldset>
 
       {notice && (
