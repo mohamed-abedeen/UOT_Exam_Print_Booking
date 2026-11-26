@@ -47,6 +47,7 @@ async function Form({ params }: { params: PageProps<"/college/edit/[id]">["param
         config={config}
         edit={{
           bookingId: b.id,
+          slot: { startsAt: b.startsAt, endsAt: b.endsAt },
           initial: {
             doctorName: b.doctorName,
             doctorPhone: b.doctorPhone,
