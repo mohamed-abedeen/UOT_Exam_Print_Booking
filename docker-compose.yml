@@ -10,7 +10,7 @@ services:
       TZ: Africa/Tripoli
       PGTZ: Africa/Tripoli
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432" # this PC only, not the local network
     volumes:
       - db-data:/var/lib/postgresql/data
 

@@ -325,6 +325,24 @@ describe.skipIf(!process.env.DATABASE_URL)("step 1.2: login and permissions", ()
       await expect(requireRole(["operator"])).rejects.toMatchObject({ to: "/login" });
     });
 
+    // Step 5.1: the cookie a login replaces must not leave a live session row behind.
+    it("a login ends the session the browser held before; a failed login leaves it alone", async () => {
+      actAs("collegeA");
+      expect(await login({ username: "operator", password: WRONG })).toEqual({ ok: false, error: "invalid" });
+      expect((await requireRole(["college"])).userId).toBe(ids.collegeA);
+      // the one refusal that comes after the password check
+      await getDb().update(users).set({ isActive: false }).where(eq(users.id, ids.operator));
+      expect(await login({ username: "operator", password: PASSWORD })).toEqual({ ok: false, error: "invalid" });
+      expect((await requireRole(["college"])).userId).toBe(ids.collegeA);
+      await getDb().update(users).set({ isActive: true }).where(eq(users.id, ids.operator));
+
+      expect(await login({ username: "operator", password: PASSWORD })).toMatchObject({ ok: true, role: "operator" });
+      expect((await requireRole(["operator"])).userId).toBe(ids.operator);
+      expect(await getDb().select().from(sessions).where(eq(sessions.userId, ids.collegeA))).toEqual([]);
+      browser.cookies.set(SESSION_COOKIE, tokens.collegeA);
+      await expect(requireRole(["college"])).rejects.toMatchObject({ to: "/login" });
+    });
+
     // Both end with a full page load in the browser, so no page of the previous user stays alive in the tab.
     it("the logout route signs out and answers with a real redirect to /login", async () => {
       actAs("operator");
