@@ -162,6 +162,7 @@ Login → admin adds a machine → college books → operator sees the queue.
 - [ ] **5.2 End-to-end tests** — Sonnet 5.5
   Requires: 2.8.
   Playwright flows for the three roles: book → confirm identity → ready → delivered; cancel; delay; machine stop.
+  Note 2026-11-27 (Sonnet 5.5): built, 4 flows pass (about 35 s after the build), not ticked (no review step; a Fable 5.2 look at the specs is still open). Run `npm run test:e2e` (the first time also `npx playwright install chromium`). Owner choices: own database `<db>_e2e` (emptied, migrated and seeded by `e2e/global-setup.ts` each run, refuses any name not ending `_e2e`), production build on port 3100 (never reuses a running server), Chromium desktop only, separate from `npm test`. The e2e day is open all hours and all weekdays so "today" always works; the lifecycle flow books the next hour today and skips itself from 23:00 Tripoli. Flows: lifecycle (college → operator confirm, ready with 3 wasted sheets, delivered → college sees it); cancel (then the same slot books again); delay (moves later, button gone after); machine stop (all 7 stopped, because small jobs also run on bigger machines; booking flagged, shown to college and on the reschedule list; all restarted). Password `E2E_PASSWORD` is a test value in `e2e/env.ts`. Not covered: WhatsApp links, no-show, Saturday requests, stock screens, phone width.
 - [ ] **5.3 Deployment** — Opus 5.5
   Requires: 5.1.
   Docker Compose on the Libyan Spider VPS, HTTPS, secrets, daily DB backup, time zone.
