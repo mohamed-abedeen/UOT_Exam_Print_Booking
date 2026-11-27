@@ -45,7 +45,7 @@ async function Bell() {
 export function RoleShell({ role, title, children }: { role: Role; title: string; children: React.ReactNode }) {
   return (
     <div className="flex flex-1 flex-col">
-      <header className="relative flex items-center justify-between border-b border-zinc-300 px-4 py-3 font-bold dark:border-zinc-700">
+      <header className="relative print:hidden flex items-center justify-between border-b border-zinc-300 px-4 py-3 font-bold dark:border-zinc-700">
         <span>{title}</span>
         <div className="flex items-center gap-3">
           {role === "college" && (
@@ -58,7 +58,7 @@ export function RoleShell({ role, title, children }: { role: Role; title: string
           </Suspense>
         </div>
       </header>
-      <main className="flex-1 p-4">
+      <main className="flex-1 p-4 print:p-0">
         <Suspense fallback={null}>
           <RoleGate role={role}>{children}</RoleGate>
         </Suspense>

@@ -23,3 +23,15 @@ body {
   color: var(--foreground);
   font-family: var(--font-sans), sans-serif;
 }
+
+/* Paper is always black on white (step 4.1): no dark page background on the print-out. */
+@media print {
+  :root {
+    --background: #ffffff;
+    --foreground: #000000;
+  }
+  @page {
+    size: A4 landscape;
+    margin: 10mm;
+  }
+}
