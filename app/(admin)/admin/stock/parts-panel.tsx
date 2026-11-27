@@ -5,7 +5,7 @@
 
 import { useRouter } from "next/navigation";
 import { Fragment, useState, useTransition } from "react";
-import { button, buttonPrimary, errorText, field, hint, noticeOk, td, th } from "@/components/admin/styles";
+import { button, buttonPrimary, errorText, field, hint, noticeOk, noticeWarn, td, th } from "@/components/admin/styles";
 import { addMachinePart, replaceMachinePart } from "@/lib/actions/stock";
 import { dayOf } from "@/lib/bookings/format";
 import type { InventoryItem, MachinePartRow } from "@/lib/stock";
@@ -131,7 +131,7 @@ function ReplaceForm({
   onCancel,
 }: {
   part: MachinePartRow;
-  onDone: (notice: string) => void;
+  onDone: (notice: string, warn?: boolean) => void;
   onCancel: () => void;
 }) {
   const router = useRouter();
@@ -149,9 +149,10 @@ function ReplaceForm({
         ...(impressions !== part.lifeImpressions ? { lifeImpressions: impressions } : {}),
       });
       if (!r.ok) {
-        setError(REPLACE_ERROR[r.error]);
-        if (r.error !== "validation") router.refresh();
-        return;
+        if (r.error === "validation") return setError(REPLACE_ERROR.validation);
+        // The part is gone from the list after the refresh, and this form with it: the reason goes to the panel.
+        router.refresh();
+        return onDone(REPLACE_ERROR[r.error], true);
       }
       router.refresh();
       onDone(
@@ -217,12 +218,12 @@ export function PartsPanel({
 }) {
   const [adding, setAdding] = useState(false);
   const [replacing, setReplacing] = useState<number | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
+  const [notice, setNotice] = useState<{ text: string; warn: boolean } | null>(null);
 
-  function done(text: string) {
+  function done(text: string, warn = false) {
     setAdding(false);
     setReplacing(null);
-    setNotice(text);
+    setNotice({ text, warn });
   }
 
   return (
@@ -243,8 +244,8 @@ export function PartsPanel({
         )}
       </div>
       {notice && (
-        <p role="status" className={`${noticeOk} mb-3`}>
-          {notice}
+        <p role="status" className={`${notice.warn ? noticeWarn : noticeOk} mb-3`}>
+          {notice.text}
         </p>
       )}
       {adding && <AddPartForm machines={machines} items={items} onDone={done} onCancel={() => setAdding(false)} />}
