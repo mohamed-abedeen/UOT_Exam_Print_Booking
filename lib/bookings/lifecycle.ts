@@ -12,6 +12,7 @@ import { AuthError, ownRows, type Actor } from "@/lib/auth/guard";
 import { bookingData, notifyCollege } from "@/lib/notifications";
 import { loadSettings } from "@/lib/scheduling/load";
 import { addMinutes, localDate } from "@/lib/scheduling/time";
+import { recordReadyStock } from "@/lib/stock";
 import type { BookingStatus } from "@/lib/scheduling/types";
 
 export type TransitionResult =
@@ -54,6 +55,9 @@ interface Moved {
   collegeId: number;
   startsAt: Date;
   endsAt: Date;
+  machineId: number;
+  sheets: number | null; // generated columns: always set on a real row
+  impressions: number | null;
 }
 
 /** The one UPDATE of a transition. Null = no row matched (not there, other status, or a guard failed). */
@@ -78,6 +82,9 @@ async function move(
       collegeId: bookings.collegeId,
       startsAt: bookings.startsAt,
       endsAt: bookings.endsAt,
+      machineId: bookings.machineId,
+      sheets: bookings.sheets,
+      impressions: bookings.impressions,
     });
   return row ?? null;
 }
@@ -126,7 +133,7 @@ export async function confirmIdentityFor(actor: Actor, input: unknown): Promise<
 
 /**
  * T3 in_progress → ready: wasted sheets given, destroyed ticked; a reschedule flag does not block it and is cleared.
- * The paper movements and the part counters of T3 are added with the stock tables (step 3.1; owner, 2026-11-25).
+ * Same transaction: paper `consume −sheets` (and `waste −wasted` when > 0), part counters += impressions (step 3.1).
  */
 export async function markReadyFor(actor: Actor, input: unknown): Promise<TransitionResult> {
   requireStaff(actor);
@@ -145,6 +152,13 @@ export async function markReadyFor(actor: Actor, input: unknown): Promise<Transi
       now,
     );
     if (!row) return missed(tx, bookingId);
+    await recordReadyStock(tx, actor, {
+      bookingId: row.id,
+      machineId: row.machineId,
+      sheets: row.sheets ?? 0,
+      impressions: row.impressions ?? 0,
+      wastedSheets,
+    });
     await notifyCollege(tx, row.collegeId, "booking_ready", row.id, bookingData(row));
     return done(row);
   });

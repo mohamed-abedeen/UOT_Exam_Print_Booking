@@ -29,6 +29,13 @@
       "when": 1795641175499,
       "tag": "0003_saturday_requests",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1795737091136,
+      "tag": "0004_stock",
+      "breakpoints": true
     }
   ]
 }
