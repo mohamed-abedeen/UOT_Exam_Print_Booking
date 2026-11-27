@@ -42,6 +42,8 @@ export const bookingStatus = pgEnum("booking_status", [
 ]);
 export const rescheduleReason = pgEnum("reschedule_reason", ["maintenance", "delay_no_slot", "machine_change"]);
 export const saturdayStatus = pgEnum("saturday_status", ["pending", "approved", "rejected"]);
+export const itemKind = pgEnum("item_kind", ["paper", "toner", "master_roll", "part"]);
+export const movementType = pgEnum("movement_type", ["receive", "consume", "waste", "adjust"]);
 export const notificationType = pgEnum("notification_type", [
   "booking_ready",
   "booking_no_show",
@@ -448,5 +450,118 @@ export const auditLog = pgTable(
     index("audit_at_idx").on(t.at),
     index("audit_user_idx").on(t.userId, t.at),
     index("audit_action_idx").on(t.action, t.at),
+  ],
+);
+
+// ---- 1.9 inventory_items (step 3.1). Exactly one active paper item, seeded by drizzle/0004 (A4, counted in sheets).
+
+export const inventoryItems = pgTable(
+  "inventory_items",
+  {
+    id: id(),
+    name: text("name").notNull(),
+    kind: itemKind("kind").notNull(),
+    unit: text("unit").notNull(),
+    machineId: ref("machine_id"), // toner, master rolls and parts of one machine
+    minQuantity: integer("min_quantity").notNull().default(0),
+    isActive: boolean("is_active").notNull().default(true),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    unique("inventory_items_name_key").on(t.name),
+    foreignKey({
+      name: "inventory_items_machine_id_fkey",
+      columns: [t.machineId],
+      foreignColumns: [machines.id],
+    }).onDelete("restrict"),
+    check("inventory_items_min_quantity_check", sql`${t.minQuantity} >= 0`),
+    uniqueIndex("inventory_one_paper_idx").on(t.kind).where(sql`${t.kind} = 'paper' AND ${t.isActive}`),
+  ],
+);
+
+// ---- 1.6 machine_parts (step 3.1). Replacing closes the row and opens a new one at 0; old rows are the history.
+
+export const machineParts = pgTable(
+  "machine_parts",
+  {
+    id: id(),
+    machineId: ref("machine_id").notNull(),
+    name: text("name").notNull(), // drum, fuser, roller, blade …
+    inventoryItemId: ref("inventory_item_id"), // the spare in stock (kind 'part'), if tracked
+    lifeImpressions: integer("life_impressions").notNull(),
+    impressionsUsed: integer("impressions_used").notNull().default(0),
+    installedAt: tstz("installed_at").notNull().defaultNow(),
+    replacedAt: tstz("replaced_at"), // NULL = installed now
+    replacedBy: ref("replaced_by"),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    foreignKey({
+      name: "machine_parts_machine_id_fkey",
+      columns: [t.machineId],
+      foreignColumns: [machines.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "machine_parts_inventory_item_id_fkey",
+      columns: [t.inventoryItemId],
+      foreignColumns: [inventoryItems.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "machine_parts_replaced_by_fkey",
+      columns: [t.replacedBy],
+      foreignColumns: [users.id],
+    }).onDelete("restrict"),
+    check("machine_parts_life_impressions_check", sql`${t.lifeImpressions} > 0`),
+    check("machine_parts_impressions_used_check", sql`${t.impressionsUsed} >= 0`),
+    index("machine_parts_installed_idx").on(t.machineId).where(sql`${t.replacedAt} IS NULL`),
+  ],
+);
+
+// ---- 1.10 inventory_movements (step 3.1). Append-only; balance of an item = sum(quantity); no balance column.
+
+export const inventoryMovements = pgTable(
+  "inventory_movements",
+  {
+    id: id(),
+    itemId: ref("item_id").notNull(),
+    type: movementType("type").notNull(),
+    quantity: integer("quantity").notNull(), // signed
+    bookingId: ref("booking_id"), // set by markReady
+    machinePartId: ref("machine_part_id"), // set by replaceMachinePart
+    note: text("note"),
+    createdBy: ref("created_by").notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    foreignKey({
+      name: "inventory_movements_item_id_fkey",
+      columns: [t.itemId],
+      foreignColumns: [inventoryItems.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "inventory_movements_booking_id_fkey",
+      columns: [t.bookingId],
+      foreignColumns: [bookings.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "inventory_movements_machine_part_id_fkey",
+      columns: [t.machinePartId],
+      foreignColumns: [machineParts.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "inventory_movements_created_by_fkey",
+      columns: [t.createdBy],
+      foreignColumns: [users.id],
+    }).onDelete("restrict"),
+    check("inventory_movements_quantity_check", sql`${t.quantity} <> 0`),
+    check(
+      "inventory_movements_check",
+      sql`(${t.type} = 'receive' AND ${t.quantity} > 0) OR (${t.type} IN ('consume', 'waste') AND ${t.quantity} < 0) OR ${t.type} = 'adjust'`,
+    ),
+    check("inventory_movements_check1", sql`${t.type} <> 'adjust' OR ${t.note} IS NOT NULL`),
+    index("movements_item_idx").on(t.itemId, t.createdAt),
+    uniqueIndex("movements_once_per_booking_idx")
+      .on(t.bookingId, t.type)
+      .where(sql`${t.bookingId} IS NOT NULL`),
   ],
 );
