@@ -15,6 +15,7 @@ import { AuthError, type Actor } from "@/lib/auth/guard";
 import { dateString, VALIDATION } from "@/lib/bookings/create";
 import { loadSettings } from "@/lib/scheduling/load";
 import { addDays, atMinutes, localDate } from "@/lib/scheduling/time";
+import { MOVEMENTS_LIMIT } from "./form";
 
 export type ItemKind = "paper" | "toner" | "master_roll" | "part";
 export type MovementType = "receive" | "consume" | "waste" | "adjust";
@@ -27,8 +28,6 @@ export interface StockAlert {
 
 const INT_MAX = 2_147_483_647;
 const MOVE_MAX = 1_000_000; // one movement, either sign (owner, 2026-11-27, step 3.1)
-/** Movements returned by one `listMovements` call, newest first (owner, 2026-11-27, step 3.1). */
-export const MOVEMENTS_LIMIT = 500;
 
 const rowId = z.number().int().positive();
 const text = (max: number) =>
@@ -568,20 +567,55 @@ export async function stockAlerts(ex: Executor, now: Date): Promise<StockAlert[]
     .where(and(eq(inventoryItems.kind, "paper"), eq(inventoryItems.isActive, true)));
   if (paper) {
     const today = localDate(now);
-    const days = await ex
-      .select({ date: bookings.workDate, sheets: sql<number>`sum(${bookings.sheets})`.mapWith(Number) })
-      .from(bookings)
-      .where(
-        and(
-          inArray(bookings.status, ["booked", "in_progress"]),
-          gte(bookings.workDate, today),
-          sql`${bookings.workDate} <= ${addDays(today, settings.suggestionSearchDays)}`,
-        ),
-      )
-      .groupBy(bookings.workDate)
-      .having(sql`sum(${bookings.sheets}) > ${paper.balance}`)
-      .orderBy(asc(bookings.workDate));
-    for (const d of days) if (d.date) alerts.push({ kind: "paper_short", itemId: paper.id, date: d.date });
+    for (const d of await bookedSheetsByDay(ex, today, addDays(today, settings.suggestionSearchDays))) {
+      if (d.sheets > paper.balance) alerts.push({ kind: "paper_short", itemId: paper.id, date: d.date });
+    }
   }
   return alerts;
+}
+
+/** Per business date from `from` to `to` (inclusive): the sheets of the `booked` + `in_progress` bookings; dates with none are absent. */
+async function bookedSheetsByDay(ex: Executor, from: string, to: string): Promise<{ date: string; sheets: number }[]> {
+  const rows = await ex
+    .select({ date: bookings.workDate, sheets: sql<number>`sum(${bookings.sheets})`.mapWith(Number) })
+    .from(bookings)
+    .where(and(inArray(bookings.status, ["booked", "in_progress"]), gte(bookings.workDate, from), sql`${bookings.workDate} <= ${to}`))
+    .groupBy(bookings.workDate)
+    .orderBy(asc(bookings.workDate));
+  return rows.flatMap((r) => (r.date ? [{ date: r.date, sheets: r.sheets }] : []));
+}
+
+// ---- getPaperForecast (step 3.2)
+
+export interface PaperDay {
+  date: string;
+  sheets: number;
+}
+export type PaperForecastResult = { ok: true; balance: number | null; days: PaperDay[] };
+
+/**
+ * The paper balance and, for every date from today to today + suggestion_search_days (the window of `paper_short`), the
+ * sheets of the `booked` + `in_progress` bookings on it (0 when none). `balance` is null without an active paper item
+ * (owner, 2026-11-27, step 3.2). Each date is read alone against the balance, as `paper_short` does.
+ */
+export async function getPaperForecastFor(actor: Actor): Promise<PaperForecastResult> {
+  requireAdmin(actor);
+  return paperForecast(getDb(), new Date());
+}
+
+export async function paperForecast(ex: Executor, now: Date): Promise<PaperForecastResult> {
+  const settings = await loadSettings(ex);
+  const today = localDate(now);
+  const last = addDays(today, settings.suggestionSearchDays);
+  const [paper] = await ex
+    .select({ balance: balanceOf() })
+    .from(inventoryItems)
+    .where(and(eq(inventoryItems.kind, "paper"), eq(inventoryItems.isActive, true)));
+  const booked = new Map((await bookedSheetsByDay(ex, today, last)).map((d) => [d.date, d.sheets]));
+  const days: PaperDay[] = [];
+  for (let i = 0; i <= settings.suggestionSearchDays; i++) {
+    const date = addDays(today, i);
+    days.push({ date, sheets: booked.get(date) ?? 0 });
+  }
+  return { ok: true, balance: paper?.balance ?? null, days };
 }

@@ -7,6 +7,7 @@ import {
   adjustStockFor,
   consumeStockFor,
   createInventoryItemFor,
+  getPaperForecastFor,
   getStockAlertsFor,
   listInventoryFor,
   listMachinePartsFor,
@@ -20,6 +21,7 @@ import {
   type ListMovementsResult,
   type ListPartsResult,
   type MovementResult,
+  type PaperForecastResult,
   type ReplacePartResult,
   type StockAlertsResult,
   type UpdateItemResult,
@@ -41,6 +43,12 @@ export async function listMovements(input?: unknown): Promise<ListMovementsResul
 export async function getStockAlerts(): Promise<StockAlertsResult> {
   const actor = await requireRole(["admin"]);
   return getStockAlertsFor(actor);
+}
+
+/** Admin only: the paper balance and the booked + in_progress sheets of each day from today to today + suggestion_search_days. */
+export async function getPaperForecast(): Promise<PaperForecastResult> {
+  const actor = await requireRole(["admin"]);
+  return getPaperForecastFor(actor);
 }
 
 /** Admin only: `{ name, kind (toner | master_roll | part), unit, machineId?, minQuantity? }`. */

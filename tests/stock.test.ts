@@ -21,6 +21,7 @@ import {
   adjustStock,
   consumeStock,
   createInventoryItem,
+  getPaperForecast,
   getStockAlerts,
   listInventory,
   listMachineParts,
@@ -214,6 +215,7 @@ describe.skipIf(!process.env.DATABASE_URL)("step 3.1: stock", () => {
       () => listInventory(),
       () => listMovements(),
       () => getStockAlerts(),
+      () => getPaperForecast(),
       () => createInventoryItem({ name: "x", kind: "toner", unit: "علبة" }),
       () => updateInventoryItem({ itemId: paperId, minQuantity: 5 }),
       () => receiveStock({ itemId: paperId, quantity: 5 }),
@@ -568,6 +570,46 @@ describe.skipIf(!process.env.DATABASE_URL)("step 3.1: stock", () => {
     ]);
     await receiveStock({ itemId: paperId, quantity: 100 }); // 400: no day exceeds it
     expect((await getStockAlerts()).alerts).toEqual([]);
+  });
+
+  it("getPaperForecast: every date of the window with its booked + in_progress sheets, and the balance", async () => {
+    actAs("admin");
+    await receiveStock({ itemId: paperId, quantity: 300 });
+    await insertBooking("booked"); // today 200
+    await insertBooking("ready"); // today, not counted
+    await insertBooking("in_progress", {}, addDays(TODAY, 1)); // +1: 200 + 200 = 400
+    await insertBooking("booked", {}, addDays(TODAY, 1));
+    await insertBooking("cancelled", {}, addDays(TODAY, 2));
+    await insertBooking("booked", { copies: 200 }, addDays(TODAY, 14)); // 400, the last day of the window
+    await insertBooking("booked", { copies: 200 }, addDays(TODAY, 15)); // past the window
+    await insertBooking("booked", {}, addDays(TODAY, -1)); // yesterday
+
+    const forecast = await getPaperForecast();
+    expect(forecast.balance).toBe(300);
+    expect(forecast.days).toHaveLength(15); // today … today + 14
+    expect(forecast.days[0]).toEqual({ date: TODAY, sheets: 200 });
+    expect(forecast.days[14]).toEqual({ date: addDays(TODAY, 14), sheets: 400 });
+    expect(forecast.days.map((d) => d.date)).toEqual(Array.from({ length: 15 }, (_, i) => addDays(TODAY, i)));
+    expect(forecast.days.filter((d) => d.sheets > 0)).toEqual([
+      { date: TODAY, sheets: 200 },
+      { date: addDays(TODAY, 1), sheets: 400 },
+      { date: addDays(TODAY, 14), sheets: 400 },
+    ]);
+    // the days above the balance are exactly the paper_short alerts
+    const short = forecast.days.filter((d) => d.sheets > forecast.balance!).map((d) => d.date);
+    expect((await getStockAlerts()).alerts.filter((a) => a.kind === "paper_short").map((a) => a.date)).toEqual(short);
+
+    await getDb().update(settings).set({ value: 3 }).where(eq(settings.key, "suggestion_search_days"));
+    expect((await getPaperForecast()).days).toHaveLength(4);
+  });
+
+  it("getPaperForecast without an active paper item: balance null, the days still listed", async () => {
+    await getDb().delete(inventoryItems).where(eq(inventoryItems.id, paperId));
+    actAs("admin");
+    await insertBooking("booked");
+    const forecast = await getPaperForecast();
+    expect(forecast.balance).toBeNull();
+    expect(forecast.days[0]).toEqual({ date: TODAY, sheets: 200 });
   });
 
   // ---- listMovements
