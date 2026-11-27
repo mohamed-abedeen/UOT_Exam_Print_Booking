@@ -12,6 +12,7 @@ const links = [
   { href: "/admin/colleges", label: "الكليات" },
   { href: "/admin/accounts", label: "الحسابات" },
   { href: "/admin/settings", label: "الإعدادات" },
+  { href: "/admin/audit", label: "سجل العمليات" },
 ];
 
 export function AdminNav() {
