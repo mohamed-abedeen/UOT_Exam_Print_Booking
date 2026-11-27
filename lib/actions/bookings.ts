@@ -107,6 +107,12 @@ export async function getDayQueue(date: unknown): Promise<GetDayQueueResult> {
   return getDayQueueFor(date);
 }
 
+/** The daily printed sheet (step 4.1): the same rows as the day queue, laid out for paper by the page. Read-only. */
+export async function getDailySheet(date: unknown): Promise<GetDayQueueResult> {
+  await requireRole(QUEUE_READERS);
+  return getDayQueueFor(date);
+}
+
 /** One booking: a college its own only (without the machine); an operator or an admin any booking. */
 export async function getBooking(input: unknown): Promise<GetBookingResult> {
   const actor = await requireRole(["college", "operator", "admin"]);

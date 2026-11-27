@@ -1,5 +1,6 @@
 // Step 1.7 — the operator's day queue: today's bookings by start time, one list with the machine as a column.
 // The buttons of each row (confirm identity, ready, delivered, no-show, WhatsApp) are components/operator/row-actions.tsx (step 2.2).
+import Link from "next/link";
 import { connection } from "next/server";
 import { Suspense } from "react";
 import { RowActions } from "@/components/operator/row-actions";
@@ -27,9 +28,14 @@ async function DayQueue() {
 
   return (
     <section className="flex flex-col gap-3">
-      <h1 className="text-lg font-bold">
-        قائمة اليوم <span dir="ltr">{today}</span>
-      </h1>
+      <div className="flex items-center gap-4">
+        <h1 className="text-lg font-bold">
+          قائمة اليوم <span dir="ltr">{today}</span>
+        </h1>
+        <Link href="/operator/sheet" className="text-sm underline underline-offset-4">
+          ورقة اليوم المطبوعة
+        </Link>
+      </div>
       {rows.length === 0 ? (
         <p className="text-zinc-600 dark:text-zinc-400">لا توجد حجوزات اليوم.</p>
       ) : (
