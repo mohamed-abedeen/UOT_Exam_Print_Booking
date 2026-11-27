@@ -98,7 +98,7 @@ export function RowActions({
   }
 
   if (status !== "booked" && status !== "in_progress" && status !== "ready") {
-    return <span className="text-zinc-500">—</span>; // delivered, cancelled and no_show are final
+    return <span className="text-muted-foreground">—</span>; // delivered, cancelled and no_show are final
   }
 
   const started = now !== null && now >= startsAt.getTime();
@@ -163,7 +163,7 @@ export function RowActions({
       </div>
 
       {status === "in_progress" && readyOpen && (
-        <form onSubmit={submitReady} className="flex flex-col gap-2 rounded-lg border border-zinc-300 p-3 dark:border-zinc-700">
+        <form onSubmit={submitReady} className="flex flex-col gap-2 rounded-2xl border border-border p-3 bg-card">
           <label className="flex items-center gap-2">
             <span>الأوراق التالفة</span>
             <input
@@ -193,7 +193,7 @@ export function RowActions({
       )}
 
       {link && (
-        <a href={link} target="_blank" rel="noopener noreferrer" className="text-sm underline">
+        <a href={link} target="_blank" rel="noopener noreferrer" className="text-sm text-primary underline">
           فتح رابط واتساب
         </a>
       )}

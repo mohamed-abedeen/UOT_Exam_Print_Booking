@@ -28,7 +28,7 @@ export function AuditView({
 }) {
   return (
     <section className="flex flex-col gap-4">
-      <h1 className="text-lg font-bold">سجل العمليات</h1>
+      <h1 className="text-xl font-bold md:text-2xl">سجل العمليات</h1>
       <form method="get" action="/admin/audit" className="flex flex-wrap items-end gap-3">
         <label className="flex flex-col gap-1">
           المستخدم
@@ -68,7 +68,7 @@ export function AuditView({
       <p className={hint}>التاريخان اختياريان؛ بتركهما فارغين يُعرض السجل كله. تُعرض أحدث {formatCount(AUDIT_LIMIT)} عملية.</p>
 
       {rows.length === 0 ? (
-        <p className="text-zinc-600 dark:text-zinc-400">لا توجد عمليات بهذه التصفية.</p>
+        <p className="rounded-2xl border border-dashed bg-card px-6 py-14 text-center text-muted-foreground">لا توجد عمليات بهذه التصفية.</p>
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full text-sm">

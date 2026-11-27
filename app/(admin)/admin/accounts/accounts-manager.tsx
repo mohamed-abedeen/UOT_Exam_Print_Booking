@@ -80,10 +80,10 @@ export function AccountsManager({
 
   return (
     <section>
-      <h1 className="mb-4 text-xl font-bold">الحسابات</h1>
+      <h1 className="mb-4 text-xl font-bold md:text-2xl">الحسابات</h1>
 
       {notice && (
-        <div role="status" className="mb-4 max-w-xl rounded-lg border border-amber-400 bg-amber-50 p-3 text-sm dark:bg-amber-950">
+        <div role="status" className="mb-4 max-w-xl notice notice--warn">
           <p>
             كلمة المرور المؤقتة للحساب <b dir="ltr">{notice.username}</b> (تظهر مرة واحدة فقط، ويغيّرها صاحب الحساب عند أول دخول):
           </p>
@@ -101,7 +101,7 @@ export function AccountsManager({
           e.preventDefault(); // not `action={…}`: React would clear the fields even when the save is refused
           create(e.currentTarget);
         }}
-        className="mb-6 grid max-w-3xl grid-cols-1 gap-4 rounded-lg border border-zinc-300 p-4 sm:grid-cols-2 dark:border-zinc-700">
+        className="mb-6 grid max-w-3xl grid-cols-1 gap-4 rounded-2xl border border-border p-4 sm:grid-cols-2 bg-card">
         <h2 className="font-bold sm:col-span-2">إضافة حساب</h2>
         <label className="flex flex-col gap-1">
           <span>اسم المستخدم</span>

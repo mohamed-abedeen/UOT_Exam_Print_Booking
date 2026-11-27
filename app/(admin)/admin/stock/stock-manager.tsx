@@ -89,7 +89,7 @@ function MovementForm({
         e.preventDefault();
         submit();
       }}
-      className="flex max-w-xl flex-col gap-3 rounded-lg border border-zinc-300 p-4 dark:border-zinc-700">
+      className="flex max-w-xl flex-col gap-3 rounded-2xl border border-border p-4 bg-card">
       <h3 className="font-bold">
         {MOVE_TITLE[kind]} — {item.name}
       </h3>
@@ -189,7 +189,7 @@ function ItemForm({
         e.preventDefault();
         submit();
       }}
-      className="flex max-w-xl flex-col gap-3 rounded-lg border border-zinc-300 p-4 dark:border-zinc-700">
+      className="flex max-w-xl flex-col gap-3 rounded-2xl border border-border p-4 bg-card">
       <h3 className="font-bold">{item ? `تعديل — ${item.name}` : "صنف جديد"}</h3>
       <label className="flex flex-col gap-1">
         <span className="text-sm font-medium">الاسم</span>
@@ -265,7 +265,7 @@ function PaperDays({ days, balance }: { days: PaperDay[]; balance: number | null
   const booked = days.filter((d) => d.sheets > 0);
   return (
     <div>
-      <h2 className="mb-1 text-xl font-bold">الورق المحجوز مقابل الرصيد</h2>
+      <h2 className="mb-1 text-[15px] font-bold">الورق المحجوز مقابل الرصيد</h2>
       {balance === null ? (
         <p className={hint}>لا يوجد صنف ورق فعّال.</p>
       ) : (
@@ -275,7 +275,7 @@ function PaperDays({ days, balance }: { days: PaperDay[]; balance: number | null
             التنفيذ» في الأيام القادمة؛ الأيام بلا حجوزات لا تظهر).
           </p>
           {booked.length === 0 ? (
-            <p className="text-zinc-600 dark:text-zinc-400">لا حجوزات في الأيام القادمة.</p>
+            <p className="rounded-2xl border border-dashed bg-card px-6 py-14 text-center text-muted-foreground">لا حجوزات في الأيام القادمة.</p>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full max-w-xl text-sm">
@@ -290,13 +290,13 @@ function PaperDays({ days, balance }: { days: PaperDay[]; balance: number | null
                   {booked.map((d) => {
                     const short = isPaperShort(d, balance);
                     return (
-                      <tr key={d.date} className={short ? "bg-red-50 dark:bg-red-950" : undefined}>
+                      <tr key={d.date} className={short ? "bg-danger-soft" : undefined}>
                         <td className={`${td} whitespace-nowrap`}>{formatDay(d.date)}</td>
                         <td className={td}>
                           <span dir="ltr">{formatCount(d.sheets)}</span>
                         </td>
                         <td className={td}>
-                          <span dir="ltr" className={short ? "font-bold text-red-700 dark:text-red-400" : undefined}>
+                          <span dir="ltr" className={short ? "font-bold text-danger" : undefined}>
                             {formatCount(balance - d.sheets)}
                           </span>
                           {short && <span className={`${errorText} ms-2 font-bold`}>لا يكفي</span>}
@@ -348,7 +348,7 @@ export function StockManager({
   return (
     <section className="flex flex-col gap-10">
       <div>
-        <h1 className="mb-3 text-2xl font-bold">المخزون</h1>
+        <h1 className="mb-3 text-xl font-bold md:text-2xl">المخزون</h1>
         {lines.length === 0 ? (
           <p role="status" className={noticeOk}>
             لا تنبيهات: الأرصدة فوق حدودها والقطع في عمرها والورق يكفي الأيام القادمة.
@@ -367,7 +367,7 @@ export function StockManager({
 
       <div>
         <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-xl font-bold">الأرصدة</h2>
+          <h2 className="text-[15px] font-bold">الأرصدة</h2>
           {action?.kind !== "new" && (
             <button type="button" onClick={() => open({ kind: "new" })} className={buttonPrimary}>
               صنف جديد
@@ -419,7 +419,7 @@ export function StockManager({
                       </div>
                     </td>
                     <td className={`${td} whitespace-nowrap align-top`}>
-                      <span dir="ltr" className={item.balance < 0 ? "font-bold text-red-700 dark:text-red-400" : undefined}>
+                      <span dir="ltr" className={item.balance < 0 ? "font-bold text-danger" : undefined}>
                         {formatCount(item.balance)}
                       </span>{" "}
                       {item.unit}

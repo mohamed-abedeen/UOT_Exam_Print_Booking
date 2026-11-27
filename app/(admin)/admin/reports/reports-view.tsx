@@ -31,7 +31,7 @@ export function ReportsView({
   return (
     <section className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center gap-3">
-        <h1 className="text-lg font-bold">التقارير</h1>
+        <h1 className="text-xl font-bold md:text-2xl">التقارير</h1>
         <form method="get" action="/admin/reports" className="flex flex-wrap items-center gap-2">
           <label className="flex items-center gap-1">
             من
@@ -59,7 +59,7 @@ export function ReportsView({
             role="tab"
             aria-selected={tab === t.key}
             onClick={() => setTab(t.key)}
-            className={`${button} ${tab === t.key ? "bg-zinc-200 font-bold dark:bg-zinc-800" : ""}`}
+            className={`${button} ${tab === t.key ? "bg-primary-soft font-bold text-primary" : ""}`}
           >
             {t.label}
           </button>
@@ -78,7 +78,7 @@ const num = "tabular-nums";
 const totalRow = "font-bold";
 
 function Empty() {
-  return <p className="text-zinc-600 dark:text-zinc-400">لا توجد بيانات في هذا المدى.</p>;
+  return <p className="rounded-2xl border border-dashed bg-card px-6 py-14 text-center text-muted-foreground">لا توجد بيانات في هذا المدى.</p>;
 }
 
 function CollegesTable({ data }: { data: Ok<CollegeReportResult> }) {
@@ -258,7 +258,7 @@ function PeakTable({ data }: { data: Ok<PeakHoursResult> }) {
               <td className={`${td} ${num}`}>{formatCount(r.impressions)}</td>
               <td className={`${td} w-1/3`}>
                 <div
-                  className="h-3 rounded bg-zinc-700 dark:bg-zinc-300"
+                  className="h-3 rounded bg-primary"
                   style={{ width: `${most > 0 ? Math.max(2, Math.round((r.impressions / most) * 100)) : 0}%` }}
                   aria-hidden="true"
                 />

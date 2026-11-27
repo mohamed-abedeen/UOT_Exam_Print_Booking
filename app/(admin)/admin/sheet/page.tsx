@@ -7,7 +7,7 @@ import { localDate } from "@/lib/scheduling/time";
 
 export default function SheetPage({ searchParams }: PageProps<"/admin/sheet">) {
   return (
-    <Suspense fallback={<p className="text-zinc-600 dark:text-zinc-400">جارٍ التحميل…</p>}>
+    <Suspense fallback={<p className="text-muted-foreground">جارٍ التحميل…</p>}>
       <Sheet searchParams={searchParams} />
     </Suspense>
   );

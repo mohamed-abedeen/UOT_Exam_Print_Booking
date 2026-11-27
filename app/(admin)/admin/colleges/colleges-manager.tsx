@@ -29,7 +29,7 @@ export function CollegesManager({ colleges }: { colleges: CollegeRow[] }) {
 
   return (
     <section>
-      <h1 className="mb-4 text-xl font-bold">الكليات</h1>
+      <h1 className="mb-4 text-xl font-bold md:text-2xl">الكليات</h1>
       <form
         onSubmit={(e) => {
           e.preventDefault(); // not `action={…}`: React would clear the field even when the save is refused
@@ -99,7 +99,7 @@ export function CollegesManager({ colleges }: { colleges: CollegeRow[] }) {
           ))}
         </tbody>
       </table>
-      <p className="mt-3 text-sm text-zinc-600 dark:text-zinc-400">إيقاف الكلية يوقف حسابها ويُنهي جلساته. تفعيل الكلية لا يفعّل الحساب: من صفحة الحسابات.</p>
+      <p className="mt-3 text-sm text-muted-foreground">إيقاف الكلية يوقف حسابها ويُنهي جلساته. تفعيل الكلية لا يفعّل الحساب: من صفحة الحسابات.</p>
     </section>
   );
 }

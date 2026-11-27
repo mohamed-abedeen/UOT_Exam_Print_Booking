@@ -34,7 +34,7 @@ export function MovementsPanel({ initial, items }: { initial: MovementRow[]; ite
 
   return (
     <div>
-      <h2 className="mb-3 text-xl font-bold">سجل الحركات</h2>
+      <h2 className="mb-3 text-[15px] font-bold">سجل الحركات</h2>
       <form
         onSubmit={(e) => {
           e.preventDefault();
@@ -70,7 +70,7 @@ export function MovementsPanel({ initial, items }: { initial: MovementRow[]; ite
         </p>
       )}
       {rows.length === 0 ? (
-        <p className="text-zinc-600 dark:text-zinc-400">لا حركات.</p>
+        <p className="rounded-2xl border border-dashed bg-card px-6 py-14 text-center text-muted-foreground">لا حركات.</p>
       ) : (
         <>
           {rows.length >= MOVEMENTS_LIMIT && (

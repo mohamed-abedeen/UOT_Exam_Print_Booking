@@ -30,7 +30,7 @@ import type { ServiceType, Sides } from "@/lib/scheduling/types";
 const CHECK_DELAY_MS = 350;
 
 const control =
-  "w-full rounded-lg border border-zinc-300 bg-transparent px-3 py-2 text-base dark:border-zinc-700 aria-[invalid=true]:border-red-600";
+  "glass-field w-full text-base";
 
 export interface Fields {
   doctorName: string;
@@ -256,7 +256,7 @@ export function BookingForm({
   return (
     <form onSubmit={onSubmit} noValidate className="mx-auto flex w-full max-w-2xl flex-col gap-6">
       {booked && (
-        <p role="status" className="rounded-lg border border-green-600 bg-green-50 p-3 text-sm text-green-900 dark:bg-green-950 dark:text-green-200">
+        <p role="status" className="notice notice--ok">
           تم الحجز لكلية {booked.collegeName}. المرجع: {booked.reference}
           {booked.examWarning && " (تنبيه: يوم الحجز يصادف تاريخ الامتحان أو يأتي بعده)"}
         </p>
@@ -413,7 +413,7 @@ export function BookingForm({
           />
         </Field>
         {examWarning && (
-          <p role="status" className="rounded-lg border border-amber-500 bg-amber-50 p-3 text-sm text-amber-900 dark:bg-amber-950 dark:text-amber-200">
+          <p role="status" className="notice notice--warn">
             تنبيه: يوم الحجز يصادف تاريخ الامتحان أو يأتي بعده. يمكنك المتابعة.
           </p>
         )}
@@ -465,7 +465,7 @@ export function BookingForm({
       </fieldset>
 
       {notice && (
-        <p role="alert" className="rounded-lg border border-red-600 bg-red-50 p-3 text-sm text-red-900 dark:bg-red-950 dark:text-red-200">
+        <p role="alert" className="notice notice--bad">
           {notice}
         </p>
       )}
@@ -473,7 +473,7 @@ export function BookingForm({
       <button
         type="submit"
         disabled={blocked}
-        className="rounded-lg bg-zinc-900 px-5 py-3 text-base font-medium text-white transition-colors hover:bg-zinc-700 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
+        className="glass-blue inline-flex h-11 items-center justify-center gap-2 px-5 font-semibold text-base disabled:opacity-50"
       >
         {edit
           ? submitting
@@ -507,22 +507,21 @@ function Field({
       <span className="text-sm font-medium">{label}</span>
       {children}
       {error ? (
-        <span role="alert" className="text-sm text-red-700 dark:text-red-400">
+        <span role="alert" className="text-sm text-danger">
           {error}
         </span>
       ) : hint ? (
-        <span className="text-sm text-zinc-600 dark:text-zinc-400">{hint}</span>
+        <span className="text-sm text-muted-foreground">{hint}</span>
       ) : null}
     </label>
   );
 }
 
-const box = "rounded-lg border p-3 text-sm";
 const tone = {
-  info: `${box} border-zinc-300 text-zinc-700 dark:border-zinc-700 dark:text-zinc-300`,
-  good: `${box} border-green-600 bg-green-50 text-green-900 dark:bg-green-950 dark:text-green-200`,
-  warn: `${box} border-amber-500 bg-amber-50 text-amber-900 dark:bg-amber-950 dark:text-amber-200`,
-  bad: `${box} border-red-600 bg-red-50 text-red-900 dark:bg-red-950 dark:text-red-200`,
+  info: "notice notice--info",
+  good: "notice notice--ok",
+  warn: "notice notice--warn",
+  bad: "notice notice--bad",
 };
 
 function AvailabilityBox({

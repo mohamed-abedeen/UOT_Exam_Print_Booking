@@ -9,7 +9,7 @@ import { digits } from "@/lib/bookings/format";
 import { saturdayDateIssue, type SaturdayDateIssue } from "@/lib/saturday/dates";
 
 const control =
-  "w-full rounded-lg border border-zinc-300 bg-transparent px-3 py-2 text-base dark:border-zinc-700 aria-[invalid=true]:border-red-600";
+  "glass-field w-full text-base";
 
 const DATE_ISSUE: Record<SaturdayDateIssue, string> = {
   not_saturday: "اختر يوم سبت.",
@@ -65,9 +65,9 @@ export function SaturdayRequestForm({ today, workingWeekdays }: { today: string;
   }
 
   return (
-    <form onSubmit={onSubmit} noValidate className="flex flex-col gap-4 rounded-lg border border-zinc-300 p-4 dark:border-zinc-700">
-      <h2 className="text-lg font-bold">طلب يوم سبت</h2>
-      <p className="text-sm text-zinc-600 dark:text-zinc-400">
+    <form onSubmit={onSubmit} noValidate className="flex flex-col gap-4 rounded-2xl border border-border p-4 bg-card">
+      <h2 className="text-[15px] font-bold">طلب يوم سبت</h2>
+      <p className="text-sm text-muted-foreground">
         يُفتح اليوم لكليتك فقط وحتى الكمية التي يعتمدها المسؤول.
       </p>
 
@@ -97,7 +97,7 @@ export function SaturdayRequestForm({ today, workingWeekdays }: { today: string;
           aria-invalid={shown("quantity") !== undefined}
           className={`${control} text-left`}
         />
-        <span className="text-sm text-zinc-600 dark:text-zinc-400">عدد النسخ × عدد النماذج × عدد الصفحات لكل نموذج، لكل أعمال ذلك اليوم.</span>
+        <span className="text-sm text-muted-foreground">عدد النسخ × عدد النماذج × عدد الصفحات لكل نموذج، لكل أعمال ذلك اليوم.</span>
         <FieldError text={shown("quantity")} />
       </label>
 
@@ -115,12 +115,12 @@ export function SaturdayRequestForm({ today, workingWeekdays }: { today: string;
       </label>
 
       {error && (
-        <p role="alert" className="rounded-lg border border-red-600 bg-red-50 p-3 text-sm text-red-900 dark:bg-red-950 dark:text-red-200">
+        <p role="alert" className="notice notice--bad">
           {error}
         </p>
       )}
       {sent && (
-        <p role="status" className="rounded-lg border border-green-600 bg-green-50 p-3 text-sm text-green-900 dark:bg-green-950 dark:text-green-200">
+        <p role="status" className="notice notice--ok">
           أُرسل طلب يوم <bdi>{sent}</bdi>. سيصلك القرار هنا في القائمة أدناه.
         </p>
       )}
@@ -128,7 +128,7 @@ export function SaturdayRequestForm({ today, workingWeekdays }: { today: string;
       <button
         type="submit"
         disabled={pending}
-        className="rounded-lg bg-zinc-900 px-5 py-3 text-base font-medium text-white transition-colors hover:bg-zinc-700 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
+        className="glass-blue inline-flex h-11 items-center justify-center gap-2 px-5 font-semibold text-base disabled:opacity-50"
       >
         {pending ? "جارٍ الإرسال…" : "أرسل الطلب"}
       </button>
@@ -138,7 +138,7 @@ export function SaturdayRequestForm({ today, workingWeekdays }: { today: string;
 
 function FieldError({ text }: { text?: string }) {
   return text ? (
-    <span role="alert" className="text-sm text-red-700 dark:text-red-400">
+    <span role="alert" className="text-sm text-danger">
       {text}
     </span>
   ) : null;

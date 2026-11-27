@@ -17,12 +17,12 @@ import type { BookingStatus } from "@/lib/scheduling/types";
 export const metadata: Metadata = { title: "حجوزاتي" };
 
 const STATUS_TONE: Record<BookingStatus, string> = {
-  booked: "border-sky-600 text-sky-800 dark:text-sky-300",
-  in_progress: "border-amber-500 text-amber-800 dark:text-amber-300",
-  ready: "border-green-600 text-green-800 dark:text-green-300",
-  delivered: "border-zinc-400 text-zinc-700 dark:text-zinc-300",
-  cancelled: "border-red-600 text-red-800 dark:text-red-300",
-  no_show: "border-red-600 text-red-800 dark:text-red-300",
+  booked: "bg-sky-100 text-sky-700 dark:bg-sky-500/15 dark:text-sky-300",
+  in_progress: "bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300",
+  ready: "bg-green-100 text-green-700 dark:bg-green-500/15 dark:text-green-300",
+  delivered: "bg-zinc-100 text-zinc-700 dark:bg-zinc-500/15 dark:text-zinc-300",
+  cancelled: "bg-red-100 text-red-700 dark:bg-red-500/15 dark:text-red-300",
+  no_show: "bg-red-100 text-red-700 dark:bg-red-500/15 dark:text-red-300",
 };
 
 // The title and the button are the static shell; the list reads the session and the database, so it streams in
@@ -31,20 +31,20 @@ export default function CollegePage({ searchParams }: PageProps<"/college">) {
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-4">
       <div className="flex items-center justify-between gap-3">
-        <h1 className="text-2xl font-bold">حجوزاتي</h1>
+        <h1 className="text-xl font-bold md:text-2xl">حجوزاتي</h1>
         <div className="flex items-center gap-3">
-          <Link href="/college/saturday" className="text-sm underline underline-offset-4">
+          <Link href="/college/saturday" className="text-sm text-primary underline underline-offset-4">
             طلبات السبت
           </Link>
           <Link
             href="/college/book"
-            className="rounded-lg bg-zinc-900 px-4 py-2 font-medium text-white transition-colors hover:bg-zinc-700 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
+            className="glass-blue inline-flex h-11 items-center justify-center gap-2 px-5 font-semibold"
           >
             حجز جديد
           </Link>
         </div>
       </div>
-      <Suspense fallback={<p className="text-zinc-600 dark:text-zinc-400">جارٍ التحميل…</p>}>
+      <Suspense fallback={<p className="text-muted-foreground">جارٍ التحميل…</p>}>
         <BookingList searchParams={searchParams} />
       </Suspense>
     </div>
@@ -68,12 +68,12 @@ async function BookingList({ searchParams }: { searchParams: PageProps<"/college
       {banner && (
         <div
           role="status"
-          className="rounded-lg border border-green-600 bg-green-50 p-3 text-green-900 dark:bg-green-950 dark:text-green-200"
+          className="notice notice--ok"
         >
           {justBooked ? "تم الحجز." : "تم تعديل الحجز."} رقم المرجع:{" "}
           <bdi dir="ltr" className="font-bold">{banner}</bdi>
           {examWarning && (
-            <p className="mt-1 text-sm text-amber-800 dark:text-amber-300">
+            <p className="mt-1 text-sm text-warning">
               تنبيه: يوم الحجز يصادف تاريخ الامتحان أو يأتي بعده.
             </p>
           )}
@@ -81,11 +81,11 @@ async function BookingList({ searchParams }: { searchParams: PageProps<"/college
       )}
 
       {!result.ok ? (
-        <p role="alert" className="text-red-700 dark:text-red-400">
+        <p role="alert" className="text-danger">
           تعذّر تحميل الحجوزات.
         </p>
       ) : rows.length === 0 ? (
-        <p className="text-zinc-600 dark:text-zinc-400">لا توجد حجوزات بعد. اضغط «حجز جديد» لإضافة أول حجز.</p>
+        <p className="rounded-2xl border border-dashed bg-card px-6 py-14 text-center text-muted-foreground">لا توجد حجوزات بعد. اضغط «حجز جديد» لإضافة أول حجز.</p>
       ) : (
         <ul className="flex flex-col gap-3">
           {rows.map((b) => (
@@ -99,12 +99,12 @@ async function BookingList({ searchParams }: { searchParams: PageProps<"/college
 
 function BookingCard({ booking: b }: { booking: BookingListItem }) {
   return (
-    <li className="flex flex-col gap-2 rounded-lg border border-zinc-300 p-4 dark:border-zinc-700">
+    <li className="flex flex-col gap-2 rounded-2xl border border-border p-4 bg-card">
       <div className="flex items-center justify-between gap-3">
         <bdi dir="ltr" className="font-bold">
           {b.reference}
         </bdi>
-        <span className={`rounded-full border px-3 py-0.5 text-sm ${STATUS_TONE[b.status]}`}>
+        <span className={`rounded-full px-3 py-0.5 text-sm font-semibold ${STATUS_TONE[b.status]}`}>
           {STATUS_LABEL[b.status]}
         </span>
       </div>
@@ -112,15 +112,15 @@ function BookingCard({ booking: b }: { booking: BookingListItem }) {
       <p className="text-sm">
         {formatDay(dayOf(b.startsAt))}، من {timeOf(b.startsAt)} إلى {timeOf(b.endsAt)}
       </p>
-      <p className="text-sm text-zinc-600 dark:text-zinc-400">
+      <p className="text-sm text-muted-foreground">
         {SERVICE_LABEL[b.serviceType]} · {b.copies} نسخة × {b.models} نموذج · {b.pagesPerModel} صفحة ·{" "}
         {SIDES_LABEL[b.sides]}
       </p>
       {b.delayedFrom && b.delayedFrom.getTime() !== b.startsAt.getTime() && (
-        <p className="text-sm text-zinc-600 dark:text-zinc-400">أُرسل إشعار تأخير؛ كان الموعد من {timeOf(b.delayedFrom)}.</p>
+        <p className="text-sm text-muted-foreground">أُرسل إشعار تأخير؛ كان الموعد من {timeOf(b.delayedFrom)}.</p>
       )}
       {b.needsReschedule && b.status === "booked" && (
-        <p role="status" className="rounded-lg border border-amber-500 bg-amber-50 p-2 text-sm text-amber-900 dark:bg-amber-950 dark:text-amber-200">
+        <p role="status" className="notice notice--warn">
           بانتظار قرار الإدارة بشأن موعد جديد.
         </p>
       )}
