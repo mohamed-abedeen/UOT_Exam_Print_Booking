@@ -73,6 +73,7 @@ export async function login(input: unknown): Promise<LoginResult> {
   const { username, password } = parsed.data;
   const now = new Date();
   const meta = await requestMeta();
+  const oldToken = (await cookies()).get(SESSION_COOKIE)?.value;
   const db = getDb();
 
   // 1. Check the password outside any transaction, so slow hashing never holds a DB connection or a row lock.
@@ -110,6 +111,8 @@ export async function login(input: unknown): Promise<LoginResult> {
       .set({ failedLoginCount: 0, lockedUntil: null, lastLoginAt: now })
       .where(eq(users.id, user.id));
     await deleteExpiredSessions(tx, now);
+    // The session this browser held until now (any user's) ends with the cookie that is about to be replaced.
+    if (oldToken && oldToken.length <= 200) await deleteSession(tx, hashToken(oldToken)); // same cap as readSession
     const { token } = await createSession(tx, user.id, meta, now);
     return { token, role: user.role, mustChangePassword: user.mustChangePassword };
   });
