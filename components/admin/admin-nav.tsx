@@ -7,6 +7,7 @@ const links = [
   { href: "/admin/stock", label: "المخزون" },
   { href: "/admin/book", label: "حجز لكلية" },
   { href: "/admin/sheet", label: "ورقة اليوم" },
+  { href: "/admin/reports", label: "التقارير" },
   { href: "/admin/saturday", label: "طلبات السبت" },
   { href: "/admin/colleges", label: "الكليات" },
   { href: "/admin/accounts", label: "الحسابات" },
