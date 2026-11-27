@@ -117,17 +117,17 @@ export function RescheduleManager({
 
   return (
     <section>
-      <h1 className="mb-4 text-xl font-bold">إعادة الجدولة</h1>
-      <p className="mb-4 text-sm text-zinc-600 dark:text-zinc-400">
+      <h1 className="mb-4 text-xl font-bold md:text-2xl">إعادة الجدولة</h1>
+      <p className="mb-4 text-sm text-muted-foreground">
         حجوزات لم تجد آلة بديلة أو وقتًا متأخرًا. انقل كل حجز إلى آلة ووقت مناسبين، وتُبلَّغ الكلية بالموعد الجديد.
       </p>
       {notice && (
-        <p role="status" className="mb-3 rounded-lg border border-green-600 bg-green-50 p-3 text-green-900 dark:bg-green-950 dark:text-green-200">
+        <p role="status" className="mb-3 notice notice--ok">
           {notice}
         </p>
       )}
       {bookings.length === 0 ? (
-        <p className="text-zinc-600 dark:text-zinc-400">لا توجد حجوزات تنتظر إعادة الجدولة.</p>
+        <p className="rounded-2xl border border-dashed bg-card px-6 py-14 text-center text-muted-foreground">لا توجد حجوزات تنتظر إعادة الجدولة.</p>
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full text-sm">

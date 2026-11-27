@@ -66,7 +66,7 @@ function AddPartForm({
         e.preventDefault();
         submit();
       }}
-      className="mb-4 flex max-w-xl flex-col gap-3 rounded-lg border border-zinc-300 p-4 dark:border-zinc-700">
+      className="mb-4 flex max-w-xl flex-col gap-3 rounded-2xl border border-border p-4 bg-card">
       <h3 className="font-bold">تركيب قطعة على آلة</h3>
       <label className="flex flex-col gap-1">
         <span className="text-sm font-medium">الآلة</span>
@@ -167,7 +167,7 @@ function ReplaceForm({
         e.preventDefault();
         submit();
       }}
-      className="flex max-w-xl flex-col gap-3 rounded-lg border border-zinc-300 p-4 dark:border-zinc-700">
+      className="flex max-w-xl flex-col gap-3 rounded-2xl border border-border p-4 bg-card">
       <h3 className="font-bold">
         استبدال «{part.name}» — {part.machineName}
       </h3>
@@ -229,7 +229,7 @@ export function PartsPanel({
   return (
     <div>
       <div className="mb-3 flex items-center justify-between">
-        <h2 className="text-xl font-bold">قطع الآلات</h2>
+        <h2 className="text-[15px] font-bold">قطع الآلات</h2>
         {!adding && machines.length > 0 && (
           <button
             type="button"
@@ -250,7 +250,7 @@ export function PartsPanel({
       )}
       {adding && <AddPartForm machines={machines} items={items} onDone={done} onCancel={() => setAdding(false)} />}
       {parts.length === 0 ? (
-        <p className="text-zinc-600 dark:text-zinc-400">لا قطع مركّبة. ركّب قطعة لتُحسب أوجه الطباعة على عمرها.</p>
+        <p className="rounded-2xl border border-dashed bg-card px-6 py-14 text-center text-muted-foreground">لا قطع مركّبة. ركّب قطعة لتُحسب أوجه الطباعة على عمرها.</p>
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full text-sm">

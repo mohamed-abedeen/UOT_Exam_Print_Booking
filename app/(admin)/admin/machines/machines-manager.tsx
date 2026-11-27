@@ -61,7 +61,7 @@ function MachineForm({ editing, onDone }: { editing: NonNullable<Editing>; onDon
         e.preventDefault(); // not `action={…}`: React would clear the fields even when the save is refused
         submit(new FormData(e.currentTarget));
       }}
-      className="mb-6 grid max-w-3xl grid-cols-1 gap-4 rounded-lg border border-zinc-300 p-4 sm:grid-cols-2 dark:border-zinc-700">
+      className="mb-6 grid max-w-3xl grid-cols-1 gap-4 rounded-2xl border border-border p-4 sm:grid-cols-2 bg-card">
       <h2 className="font-bold sm:col-span-2">{m ? `تعديل: ${m.name}` : "إضافة آلة"}</h2>
       <label className="flex flex-col gap-1">
         <span>الاسم</span>
@@ -138,7 +138,7 @@ export function MachinesManager({ machines }: { machines: MachineRow[] }) {
   return (
     <section>
       <div className="mb-4 flex items-center justify-between">
-        <h1 className="text-xl font-bold">الآلات</h1>
+        <h1 className="text-xl font-bold md:text-2xl">الآلات</h1>
         {!editing && (
           <button type="button" onClick={() => setEditing({ kind: "new" })} className={buttonPrimary}>
             إضافة آلة
@@ -156,7 +156,7 @@ export function MachinesManager({ machines }: { machines: MachineRow[] }) {
         />
       )}
       {notice && (
-        <p role="status" className="mb-3 rounded-lg border border-amber-500 bg-amber-50 p-3 text-amber-900 dark:bg-amber-950 dark:text-amber-200">
+        <p role="status" className="mb-3 notice notice--warn">
           بسبب هذا التغيير: {notice}{" "}
           <Link href="/admin/reschedule" className="font-medium underline">
             قائمة إعادة الجدولة

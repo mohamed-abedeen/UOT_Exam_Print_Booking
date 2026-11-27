@@ -14,8 +14,8 @@ import { draftOf, NUMBER_FIELDS, settingsPatch, type SettingsDraft } from "@/lib
 
 const WEEKDAYS = [0, 1, 2, 3, 4, 5, 6];
 const noticeClass =
-  "rounded-lg border border-green-600 bg-green-50 p-3 text-sm text-green-900 dark:bg-green-950 dark:text-green-200";
-const hintClass = "text-sm text-zinc-600 dark:text-zinc-400";
+  "notice notice--ok";
+const hintClass = "text-sm text-muted-foreground";
 
 const ADD_ERROR: Record<string, string> = {
   validation: "تحقق من التاريخ (اليوم أو بعده) ومن الاسم (من 1 إلى 200 حرف).",
@@ -68,7 +68,7 @@ function SettingsForm({ settings }: { settings: Settings }) {
         save();
       }}
       className="mb-10 flex max-w-2xl flex-col gap-5">
-      <h2 className="text-xl font-bold">الدوام والقواعد</h2>
+      <h2 className="text-[15px] font-bold">الدوام والقواعد</h2>
 
       <fieldset className="flex flex-col gap-2">
         <legend className="mb-1 text-sm font-medium">ساعات الدوام</legend>
@@ -189,7 +189,7 @@ function HolidayForm({ today }: { today: string }) {
         e.preventDefault();
         submit();
       }}
-      className="mb-6 flex max-w-2xl flex-col gap-3 rounded-lg border border-zinc-300 p-4 dark:border-zinc-700">
+      className="mb-6 flex max-w-2xl flex-col gap-3 rounded-2xl border border-border p-4 bg-card">
       <h3 className="font-bold">إضافة عطلة</h3>
       <div className="flex flex-wrap gap-3">
         <label className="flex flex-col gap-1">
@@ -294,17 +294,17 @@ export function SettingsManager({
 }) {
   return (
     <section>
-      <h1 className="mb-1 text-2xl font-bold">الإعدادات</h1>
-      <p className="mb-6 text-sm text-zinc-600 dark:text-zinc-400">
+      <h1 className="mb-1 text-xl font-bold md:text-2xl">الإعدادات</h1>
+      <p className="mb-6 text-sm text-muted-foreground">
         تغيير الساعات أو الأيام لا يحرّك الحجوزات الموجودة.
       </p>
 
       <SettingsForm settings={settings} />
 
-      <h2 className="mb-3 text-xl font-bold">العطل</h2>
+      <h2 className="mb-3 text-[15px] font-bold">العطل</h2>
       <HolidayForm today={today} />
       {holidays.length === 0 ? (
-        <p className="text-zinc-600 dark:text-zinc-400">لا توجد عطل مسجلة.</p>
+        <p className="rounded-2xl border border-dashed bg-card px-6 py-14 text-center text-muted-foreground">لا توجد عطل مسجلة.</p>
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full text-sm">

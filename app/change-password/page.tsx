@@ -14,12 +14,14 @@ async function SignedInOnly() {
 
 export default function ChangePasswordPage() {
   return (
-    <main className="flex flex-1 flex-col items-center justify-center gap-6 px-4 py-16">
-      <h1 className="text-2xl font-bold">تغيير كلمة المرور</h1>
-      <Suspense fallback={null}>
-        <SignedInOnly />
-      </Suspense>
-      <ChangePasswordForm />
+    <main className="flex flex-1 flex-col items-center justify-center px-4 py-16">
+      <div className="flex w-full max-w-sm flex-col gap-5 rounded-3xl border border-border bg-card p-5 sm:p-6">
+        <h1 className="text-xl font-bold md:text-2xl">تغيير كلمة المرور</h1>
+        <Suspense fallback={null}>
+          <SignedInOnly />
+        </Suspense>
+        <ChangePasswordForm />
+      </div>
     </main>
   );
 }

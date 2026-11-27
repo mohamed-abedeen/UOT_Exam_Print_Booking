@@ -64,11 +64,11 @@ function DecisionForm({
         e.preventDefault();
         submit(new FormData(e.currentTarget));
       }}
-      className="mb-6 flex max-w-2xl flex-col gap-4 rounded-lg border border-zinc-300 p-4 dark:border-zinc-700">
+      className="mb-6 flex max-w-2xl flex-col gap-4 rounded-2xl border border-border p-4 bg-card">
       <h2 className="font-bold">
         {mode === "approve" ? "الموافقة على" : "رفض"} طلب {row.collegeName} ليوم {formatDay(row.date)}
       </h2>
-      <p className="text-sm text-zinc-600 dark:text-zinc-400">
+      <p className="text-sm text-muted-foreground">
         الكمية المتوقعة: {row.expectedQuantity} · السبب: {row.reason}
       </p>
       {mode === "approve" && (
@@ -83,7 +83,7 @@ function DecisionForm({
             maxLength={9}
             className={`${field} text-left`}
           />
-          <span className="text-sm text-zinc-600 dark:text-zinc-400">
+          <span className="text-sm text-muted-foreground">
             يُفتح اليوم لهذه الكلية فقط حتى هذه الكمية، ولا يُسحب الاعتماد بعد ذلك.
           </span>
         </label>
@@ -123,8 +123,8 @@ export function SaturdayManager({ items, today }: { items: SaturdayRequestItem[]
 
   return (
     <section>
-      <h1 className="mb-1 text-2xl font-bold">طلبات السبت</h1>
-      <p className="mb-4 text-sm text-zinc-600 dark:text-zinc-400">
+      <h1 className="mb-1 text-xl font-bold md:text-2xl">طلبات السبت</h1>
+      <p className="mb-4 text-sm text-muted-foreground">
         {pendingCount === 0 ? "لا توجد طلبات تنتظر القرار." : `${pendingCount} طلب ينتظر القرار.`}
       </p>
 
@@ -140,7 +140,7 @@ export function SaturdayManager({ items, today }: { items: SaturdayRequestItem[]
         />
       )}
       {notice && (
-        <p role="status" className="mb-4 rounded-lg border border-green-600 bg-green-50 p-3 text-sm text-green-900 dark:bg-green-950 dark:text-green-200">
+        <p role="status" className="mb-4 notice notice--ok">
           {notice}
         </p>
       )}
@@ -169,7 +169,7 @@ export function SaturdayManager({ items, today }: { items: SaturdayRequestItem[]
       </div>
 
       {shown.length === 0 ? (
-        <p className="text-zinc-600 dark:text-zinc-400">لا توجد طلبات بهذا الفلتر.</p>
+        <p className="rounded-2xl border border-dashed bg-card px-6 py-14 text-center text-muted-foreground">لا توجد طلبات بهذا الفلتر.</p>
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
@@ -198,18 +198,18 @@ export function SaturdayManager({ items, today }: { items: SaturdayRequestItem[]
                     <td className={td}>
                       {r.reason}
                       {r.decisionNote && (
-                        <span className="block text-zinc-600 dark:text-zinc-400">ملاحظتك: {r.decisionNote}</span>
+                        <span className="block text-muted-foreground">ملاحظتك: {r.decisionNote}</span>
                       )}
                     </td>
                     <td className={td}>
-                      <span className={`rounded-full border px-2 py-0.5 ${SATURDAY_STATUS_TONE[r.status]}`}>
+                      <span className={`rounded-full px-2 py-0.5 font-semibold ${SATURDAY_STATUS_TONE[r.status]}`}>
                         {SATURDAY_STATUS_LABEL[r.status]}
                       </span>
                       {r.status === "pending" && r.date < today && (
-                        <span className="block text-zinc-600 dark:text-zinc-400">مضى يومه</span>
+                        <span className="block text-muted-foreground">مضى يومه</span>
                       )}
                       {r.decidedAt && r.decidedByName && (
-                        <span className="block text-zinc-600 dark:text-zinc-400">
+                        <span className="block text-muted-foreground">
                           {r.decidedByName} · {dayTime(r.decidedAt)}
                         </span>
                       )}

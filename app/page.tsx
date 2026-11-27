@@ -11,7 +11,7 @@ export default function Home() {
     <main className="flex flex-1 flex-col items-center justify-center gap-8 px-4 py-16 text-center">
       <div className="flex flex-col gap-2">
         <h1 className="text-3xl font-bold">حجز طباعة الامتحانات</h1>
-        <p className="text-lg text-zinc-600 dark:text-zinc-400">
+        <p className="text-lg text-muted-foreground">
           مركز الطباعة — جامعة طرابلس
         </p>
       </div>
@@ -20,7 +20,7 @@ export default function Home() {
           <Link
             key={area.href}
             href={area.href}
-            className="rounded-lg border border-zinc-300 px-5 py-3 font-medium transition-colors hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
+            className="glass-soft flex h-12 items-center justify-center px-5 font-semibold"
           >
             {area.label}
           </Link>

@@ -3,7 +3,7 @@
 import { useActionState } from "react";
 import { changePasswordAction, type ChangePasswordFormState } from "./actions";
 
-const field = "rounded-lg border border-zinc-300 bg-transparent px-3 py-2 dark:border-zinc-700";
+const field = "glass-field";
 
 const messages: Record<NonNullable<ChangePasswordFormState>["error"], string> = {
   wrong_password: "كلمة المرور الحالية غير صحيحة.",
@@ -17,7 +17,7 @@ export function ChangePasswordForm() {
   const [state, action, pending] = useActionState(changePasswordAction, undefined);
 
   return (
-    <form action={action} className="flex w-full max-w-sm flex-col gap-4">
+    <form action={action} className="flex w-full flex-col gap-4">
       <label className="flex flex-col gap-1">
         <span>كلمة المرور الحالية</span>
         <input name="currentPassword" type="password" autoComplete="current-password" required maxLength={128} dir="ltr" className={field} />
@@ -31,14 +31,14 @@ export function ChangePasswordForm() {
         <input name="confirmPassword" type="password" autoComplete="new-password" required minLength={10} maxLength={128} dir="ltr" className={field} />
       </label>
       {state?.error && (
-        <p role="alert" className="text-sm text-red-700 dark:text-red-400">
+        <p role="alert" className="text-sm text-danger">
           {messages[state.error]}
         </p>
       )}
       <button
         type="submit"
         disabled={pending}
-        className="rounded-lg bg-zinc-900 px-5 py-2 font-medium text-white transition-colors hover:bg-zinc-700 disabled:opacity-60 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
+        className="glass-blue inline-flex h-11 items-center justify-center gap-2 px-5 font-semibold disabled:opacity-60"
       >
         حفظ
       </button>

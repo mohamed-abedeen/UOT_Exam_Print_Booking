@@ -94,7 +94,7 @@ function StopForm({
         e.preventDefault();
         submit(new FormData(e.currentTarget));
       }}
-      className="mb-6 flex max-w-2xl flex-col gap-4 rounded-lg border border-zinc-300 p-4 dark:border-zinc-700">
+      className="mb-6 flex max-w-2xl flex-col gap-4 rounded-2xl border border-border p-4 bg-card">
       <h2 className="font-bold">إيقاف الآلة: {machine.name}</h2>
 
       <fieldset className="flex flex-col gap-2">
@@ -138,7 +138,7 @@ function StopForm({
         <input name="reason" required maxLength={500} className={field} />
       </label>
 
-      <p className="text-sm text-zinc-600 dark:text-zinc-400">
+      <p className="text-sm text-muted-foreground">
         الحجوزات التي تقع في فترة الإيقاف تُنقل تلقائيًا إلى آلة مناسبة في الوقت نفسه إن وُجدت، وإلا تُوضع في قائمة إعادة
         الجدولة.
       </p>
@@ -204,7 +204,7 @@ export function MaintenanceManager({
   return (
     <section className="flex flex-col gap-8">
       <div>
-        <h1 className="mb-4 text-xl font-bold">الصيانة</h1>
+        <h1 className="mb-4 text-xl font-bold md:text-2xl">الصيانة</h1>
         {stopping && (
           <StopForm
             key={stopping.id}
@@ -219,7 +219,7 @@ export function MaintenanceManager({
           />
         )}
         {notice && (
-          <p role="status" className="mb-3 rounded-lg border border-green-600 bg-green-50 p-3 text-green-900 dark:bg-green-950 dark:text-green-200">
+          <p role="status" className="mb-3 notice notice--ok">
             {notice.text}{" "}
             {notice.link && (
               <Link href="/admin/reschedule" className="font-medium underline">
@@ -288,9 +288,9 @@ export function MaintenanceManager({
       </div>
 
       <div>
-        <h2 className="mb-3 text-lg font-bold">سجل الصيانة</h2>
+        <h2 className="mb-3 text-[15px] font-bold">سجل الصيانة</h2>
         {items.length === 0 ? (
-          <p className="text-zinc-600 dark:text-zinc-400">لا توجد سجلات صيانة بعد.</p>
+          <p className="rounded-2xl border border-dashed bg-card px-6 py-14 text-center text-muted-foreground">لا توجد سجلات صيانة بعد.</p>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">

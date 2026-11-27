@@ -10,11 +10,11 @@ export const metadata: Metadata = { title: "حجز جديد" };
 export default function BookPage() {
   return (
     <div className="mx-auto flex w-full max-w-2xl flex-col gap-4">
-      <Link href="/college" className="text-sm underline">
+      <Link href="/college" className="text-sm text-primary underline">
         ← حجوزاتي
       </Link>
-      <h1 className="text-2xl font-bold">حجز جديد</h1>
-      <Suspense fallback={<p className="text-zinc-600 dark:text-zinc-400">جارٍ التحميل…</p>}>
+      <h1 className="text-xl font-bold md:text-2xl">حجز جديد</h1>
+      <Suspense fallback={<p className="text-muted-foreground">جارٍ التحميل…</p>}>
         <Form />
       </Suspense>
     </div>

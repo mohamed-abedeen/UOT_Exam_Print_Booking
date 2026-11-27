@@ -90,7 +90,7 @@ export function BookingActions({
       )}
 
       {panel === "cancel" && (
-        <div className="flex flex-col gap-2 rounded-lg border border-red-600 p-3 text-sm">
+        <div className="flex flex-col gap-2 rounded-2xl bg-danger-soft p-4 text-sm">
           <p>سيُلغى الحجز ويُفرَّغ وقته، ولا يمكن التراجع عن ذلك.</p>
           <label className="flex flex-col gap-1">
             <span>سبب الإلغاء (اختياري)</span>
@@ -101,7 +101,7 @@ export function BookingActions({
               type="button"
               disabled={pending}
               onClick={cancel}
-              className="rounded-lg bg-red-700 px-3 py-1 text-sm font-medium text-white hover:bg-red-800 disabled:opacity-60"
+              className="inline-flex h-11 items-center justify-center rounded-full bg-danger px-4 font-semibold text-white hover:opacity-90 dark:bg-rose-600 text-sm disabled:opacity-60"
             >
               {pending ? "جارٍ الإلغاء…" : "تأكيد الإلغاء"}
             </button>
@@ -113,7 +113,7 @@ export function BookingActions({
       )}
 
       {panel === "delay" && (
-        <div className="flex flex-col gap-2 rounded-lg border border-amber-500 p-3 text-sm">
+        <div className="flex flex-col gap-2 rounded-2xl bg-warning-soft p-4 text-sm">
           <p>
             يُنقل الحجز إلى أحدث وقت متاح في اليوم نفسه بعد موعده الحالي. يُسمح بإشعار تأخير واحد لكل حجز، ولا يمكن
             التراجع عنه. إن لم يوجد وقت متأخر يبقى الحجز في موعده وتقرر الإدارة.
@@ -135,7 +135,7 @@ export function BookingActions({
         </p>
       )}
       {done && (
-        <p role="status" className="text-sm text-green-800 dark:text-green-300">
+        <p role="status" className="text-sm text-success">
           {done}
         </p>
       )}

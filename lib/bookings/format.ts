@@ -120,7 +120,7 @@ export const SATURDAY_STATUS_LABEL = {
 
 /** Badge colours of a Saturday request's status; the college and admin screens share them. */
 export const SATURDAY_STATUS_TONE = {
-  pending: "border-amber-500 text-amber-800 dark:text-amber-300",
-  approved: "border-green-600 text-green-800 dark:text-green-300",
-  rejected: "border-red-600 text-red-800 dark:text-red-300",
+  pending: "bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300",
+  approved: "bg-green-100 text-green-700 dark:bg-green-500/15 dark:text-green-300",
+  rejected: "bg-red-100 text-red-700 dark:bg-red-500/15 dark:text-red-300",
 } as const;

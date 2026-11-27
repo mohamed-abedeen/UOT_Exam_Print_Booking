@@ -12,11 +12,11 @@ export const metadata: Metadata = { title: "تعديل حجز" };
 export default function EditBookingPage({ params }: PageProps<"/college/edit/[id]">) {
   return (
     <div className="mx-auto flex w-full max-w-2xl flex-col gap-4">
-      <Link href="/college" className="text-sm underline">
+      <Link href="/college" className="text-sm text-primary underline">
         ← حجوزاتي
       </Link>
-      <h1 className="text-2xl font-bold">تعديل حجز</h1>
-      <Suspense fallback={<p className="text-zinc-600 dark:text-zinc-400">جارٍ التحميل…</p>}>
+      <h1 className="text-xl font-bold md:text-2xl">تعديل حجز</h1>
+      <Suspense fallback={<p className="text-muted-foreground">جارٍ التحميل…</p>}>
         <Form params={params} />
       </Suspense>
     </div>
@@ -28,11 +28,11 @@ async function Form({ params }: { params: PageProps<"/college/edit/[id]">["param
   const bookingId = /^\d{1,9}$/.test(id) ? Number(id) : 0;
   const [found, config] = await Promise.all([getBooking({ bookingId }), getBookingFormConfig()]);
 
-  if (!found.ok) return <p role="alert" className="text-red-700 dark:text-red-400">الحجز غير موجود.</p>;
+  if (!found.ok) return <p role="alert" className="text-danger">الحجز غير موجود.</p>;
   const b = found.booking;
   if (b.status !== "booked") {
     return (
-      <p role="alert" className="text-red-700 dark:text-red-400">
+      <p role="alert" className="text-danger">
         لا يمكن تعديل هذا الحجز لأنه ليس في حالة «محجوز».
       </p>
     );

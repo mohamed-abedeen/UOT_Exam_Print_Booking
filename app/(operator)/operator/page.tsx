@@ -12,7 +12,7 @@ import { localDate } from "@/lib/scheduling/time";
 // (same as the college and admin pages; Next 16 instant-navigation check).
 export default function OperatorPage() {
   return (
-    <Suspense fallback={<p className="text-zinc-600 dark:text-zinc-400">جارٍ التحميل…</p>}>
+    <Suspense fallback={<p className="text-muted-foreground">جارٍ التحميل…</p>}>
       <DayQueue />
     </Suspense>
   );
@@ -29,20 +29,20 @@ async function DayQueue() {
   return (
     <section className="flex flex-col gap-3">
       <div className="flex items-center gap-4">
-        <h1 className="text-lg font-bold">
+        <h1 className="text-xl font-bold md:text-2xl">
           قائمة اليوم <span dir="ltr">{today}</span>
         </h1>
-        <Link href="/operator/sheet" className="text-sm underline underline-offset-4">
+        <Link href="/operator/sheet" className="text-sm text-primary underline underline-offset-4">
           ورقة اليوم المطبوعة
         </Link>
       </div>
       {rows.length === 0 ? (
-        <p className="text-zinc-600 dark:text-zinc-400">لا توجد حجوزات اليوم.</p>
+        <p className="rounded-2xl border border-dashed bg-card px-6 py-14 text-center text-muted-foreground">لا توجد حجوزات اليوم.</p>
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full min-w-[72rem] border-collapse text-sm">
             <thead>
-              <tr className="border-b border-zinc-300 text-start dark:border-zinc-700">
+              <tr className="border-b border-border text-start">
                 {["الوقت", "الآلة", "المرجع", "الكلية", "الدكتور", "المستلم", "الموضوع", "الخدمة", "الكمية", "الحالة", "الإجراءات"].map((h) => (
                   <th key={h} className="px-2 py-2 text-start font-bold">
                     {h}
@@ -52,7 +52,7 @@ async function DayQueue() {
             </thead>
             <tbody>
               {rows.map((r) => (
-                <tr key={r.id} className="border-b border-zinc-200 align-top dark:border-zinc-800">
+                <tr key={r.id} className="border-b border-border align-top">
                   <td className="px-2 py-2 whitespace-nowrap" dir="ltr">
                     {timeOf(r.startsAt)}–{timeOf(r.endsAt)}
                   </td>
@@ -70,7 +70,7 @@ async function DayQueue() {
                   </td>
                   <td className="px-2 py-2 whitespace-nowrap">
                     {STATUS_LABEL[r.status]}
-                    {r.needsReschedule && <span className="ms-2 font-bold text-red-700 dark:text-red-400">يحتاج إعادة جدولة</span>}
+                    {r.needsReschedule && <span className="ms-2 font-bold text-danger">يحتاج إعادة جدولة</span>}
                   </td>
                   <td className="px-2 py-2">
                     <RowActions
